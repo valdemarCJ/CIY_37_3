@@ -39,11 +39,18 @@ export default function UserProfile({ onViewChange, user }) {
         return
       }
 
+      if (!token) {
+        setError('No authentication token found. Please login again.')
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       setError(null)
       
       try {
         console.log('Fetching user profile for user ID:', userId)
+        console.log('Using token:', token ? 'Token present' : 'No token')
         
         // Get user details and additional user data in parallel
         const [userDetails, bookmarksResponse, ratingsResponse, searchHistoryResponse] = await Promise.all([
@@ -122,13 +129,14 @@ export default function UserProfile({ onViewChange, user }) {
 
         // Transform search history data
         let searchHistoryData = []
-        if (searchHistoryResponse?.items || searchHistoryResponse) {
-          const searches = searchHistoryResponse.items || searchHistoryResponse || []
-          searchHistoryData = searches.slice(0, 10).map((search, index) => ({
-            id: search.id || index + 1,
-            query: search.query || search.searchTerm || 'Unknown search',
-            timestamp: search.timestamp || search.searchedAt || new Date().toISOString(),
-            results: search.resultsCount || search.results || 0
+        if (searchHistoryResponse?.items) {
+          const searches = searchHistoryResponse.items || []
+          searchHistoryData = searches.map((search, index) => ({
+            id: index + 1,
+            query: search.text || 'Unknown search',
+            timestamp: search.searchedAt || new Date().toISOString(),
+            searchedAt: search.searchedAt || new Date().toISOString(),
+            repeatUrl: search.links?.find(link => link.rel === 'repeat')?.href || null
           }))
         }
 
@@ -149,7 +157,7 @@ export default function UserProfile({ onViewChange, user }) {
     }
 
     fetchUserProfile()
-  }, [userId])
+  }, [userId, token])
 
   const handleDeleteAccount = () => {
     if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
@@ -267,7 +275,7 @@ export default function UserProfile({ onViewChange, user }) {
                         <strong>"{search.query}"</strong>
                       </div>
                       <div className="small text-muted">
-                        {search.results} results • {new Date(search.timestamp).toLocaleDateString()}
+                        {new Date(search.searchedAt).toLocaleDateString()} at {new Date(search.searchedAt).toLocaleTimeString()}
                       </div>
                     </li>
                   ))}

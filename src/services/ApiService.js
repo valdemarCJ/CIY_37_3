@@ -79,10 +79,6 @@ class ApiService {
     return this.makeRequest(`/Movies/${tconst}`)
   }
 
-  async searchMovies(query, page = 1, pageSize = 20) {
-    return this.makeRequest(`/Search?query=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}`)
-  }
-
   async getMovieDetails(tconst) {
     return this.makeRequest(`/movie-details/${tconst}`)
   }

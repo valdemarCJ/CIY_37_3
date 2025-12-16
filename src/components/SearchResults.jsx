@@ -2,12 +2,10 @@ import { useState, useEffect } from 'react'
 import ApiService from '../services/ApiService'
 
 export default function SearchResults({ searchQuery, onViewChange }) {
-  const [filters, setFilters] = useState({
-    releaseYear: '',
-    ratings: '',
-    genre: '',
-    language: ''
-  })
+  const [sortBy, setSortBy] = useState('')
+  const [sortOrder, setSortOrder] = useState('asc')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [votesFilter, setVotesFilter] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -30,7 +28,8 @@ export default function SearchResults({ searchQuery, onViewChange }) {
             
             try {
               // Fetch additional data in parallel
-              const [movieDetails, imdbRating, cast, genres] = await Promise.all([
+              const [movieData, movieDetails, imdbRating, cast, genres] = await Promise.all([
+                ApiService.getMovie(tconst).catch(() => null),
                 ApiService.getMovieDetails(tconst).catch(() => null),
                 ApiService.getImdbRating(tconst).catch(() => null),
                 ApiService.getMoviePeople(tconst).catch(() => null),
@@ -53,18 +52,18 @@ export default function SearchResults({ searchQuery, onViewChange }) {
               return {
                 id: tconst,
                 tconst: tconst,
-                title: item.primaryTitle || item.title || 'Unknown Title',
-                type: item.titleType || movieDetails?.titleType || 'movie',
-                rating: item.averageRating || movieDetails?.averageRating || 'N/A',
+                title: item.primaryTitle || movieData?.primaryTitle || item.title || 'Unknown Title',
+                type: item.titleType || movieData?.titleType || movieDetails?.titleType || 'movie',
+                rating: item.averageRating || movieData?.averageRating || movieDetails?.averageRating || 'N/A',
                 imdbRating: imdbRating?.averageRating || null,
                 imdbVotes: imdbRating?.numVotes || null,
                 actors: castWithBackendNames,
                 plot: movieDetails?.plot || item.plot || 'No plot available...',
                 poster: item.poster || movieDetails?.poster,
-                year: item.startYear || movieDetails?.startYear,
-                runtime: movieDetails?.runtimeMinutes,
+                year: movieData?.startYear || item.startYear || movieDetails?.startYear,
+                runtime: movieDetails?.runtimeMinutes || movieData?.runtimeMinutes,
                 genres: genres?.map(g => g.genre) || [],
-                adult: movieDetails?.isAdult
+                adult: movieDetails?.isAdult || movieData?.isAdult
               }
             } catch (error) {
               console.error(`Error enriching data for ${tconst}:`, error)
@@ -97,73 +96,130 @@ export default function SearchResults({ searchQuery, onViewChange }) {
     fetchSearchResults()
   }, [searchQuery])
 
-  const handleFilterChange = (filterName, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [filterName]: value
-    }))
-  }
+  // Sort and filter results based on selected criteria
+  const sortedAndFilteredResults = [...results]
+    .filter(result => {
+      // Filter by type
+      if (typeFilter && !result.type?.toLowerCase().includes(typeFilter.toLowerCase())) {
+        return false
+      }
+      
+      // Filter by votes
+      if (votesFilter) {
+        const votes = parseInt(result.imdbVotes) || 0
+        switch (votesFilter) {
+          case '1+':
+            return votes > 1
+          case '1000+':
+            return votes > 1000
+          case '10000+':
+            return votes > 10000
+          default:
+            return true
+        }
+      }
+      
+      return true
+    })
+    .sort((a, b) => {
+      if (!sortBy) return 0
+      
+      let aValue, bValue
+      
+      switch (sortBy) {
+        case 'title':
+          aValue = a.title?.toLowerCase() || ''
+          bValue = b.title?.toLowerCase() || ''
+          break
+        case 'year':
+          aValue = parseInt(a.year) || 0
+          bValue = parseInt(b.year) || 0
+          break
+        case 'rating':
+          aValue = parseFloat(a.imdbRating) || 0
+          bValue = parseFloat(b.imdbRating) || 0
+          break
+        case 'type':
+          aValue = a.type?.toLowerCase() || ''
+          bValue = b.type?.toLowerCase() || ''
+          break
+        default:
+          return 0
+      }
+      
+      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1
+      return 0
+    })
 
   return (
     <div className="container mt-4">
-      {/* Filter Controls */}
+      {/* Sort and Filter Controls */}
       <div className="row mb-4">
         <div className="col-12">
-          <div className="d-flex gap-2 mb-3">
+          <div className="d-flex gap-2 mb-3 align-items-center flex-wrap">
+            <span className="fw-bold me-2">Sort by:</span>
+            
             <select 
               className="form-select" 
-              value={filters.releaseYear}
-              onChange={(e) => handleFilterChange('releaseYear', e.target.value)}
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
               style={{ maxWidth: '150px' }}
             >
-              <option value="">Release year ▼</option>
-              <option value="2023">2023</option>
-              <option value="2022">2022</option>
-              <option value="2021">2021</option>
+              <option value="">Default</option>
+              <option value="title">Title</option>
+              <option value="year">Release Year</option>
+              <option value="rating">Rating</option>
+              <option value="type">Type</option>
             </select>
 
+            {sortBy && (
+              <select 
+                className="form-select"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value)}
+                style={{ maxWidth: '120px' }}
+              >
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
+            )}
+            
+            <span className="fw-bold me-2 ms-4">Filter by type:</span>
+            
             <select 
-              className="form-select"
-              value={filters.ratings}
-              onChange={(e) => handleFilterChange('ratings', e.target.value)}
+              className="form-select" 
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
               style={{ maxWidth: '150px' }}
             >
-              <option value="">Ratings ▼</option>
-              <option value="9+">9.0+</option>
-              <option value="8+">8.0+</option>
-              <option value="7+">7.0+</option>
-            </select>
-
+              <option value="">All types</option>
+              <option value="movie">Movie</option>
+              <option value="tvSeries">TV Series</option>
+              <option value="short">Short</option>
+              <option value="tvMovie">TV Movie</option>
+              <option value="tvMiniSeries">Mini Series</option>
+              <option value="tvSpecial">TV Special</option>
+            </select>            
+            <span className="fw-bold me-2 ms-4">Filter by votes:</span>
+            
             <select 
-              className="form-select"
-              value={filters.genre}
-              onChange={(e) => handleFilterChange('genre', e.target.value)}
+              className="form-select" 
+              value={votesFilter}
+              onChange={(e) => setVotesFilter(e.target.value)}
               style={{ maxWidth: '150px' }}
             >
-              <option value="">Genre ▼</option>
-              <option value="action">Action</option>
-              <option value="drama">Drama</option>
-              <option value="comedy">Comedy</option>
-            </select>
-
-            <select 
-              className="form-select"
-              value={filters.language}
-              onChange={(e) => handleFilterChange('language', e.target.value)}
-              style={{ maxWidth: '150px' }}
-            >
-              <option value="">Language ▼</option>
-              <option value="en">English</option>
-              <option value="da">Danish</option>
-              <option value="de">German</option>
-            </select>
-          </div>
+              <option value="">Any amount votes</option>
+              <option value="1+">More than 1 vote</option>
+              <option value="1000+">More than 1,000 votes</option>
+              <option value="10000+">More than 10,000 votes</option>
+            </select>          </div>
         </div>
       </div>
 
       {/* Results Section */}
       <div className="border p-3">
-        <h3 className="mb-3">Result list</h3>
+        <h3 className="mb-3">Search Results</h3>
         
         {error && (
           <div className="alert alert-danger" role="alert">
@@ -178,13 +234,13 @@ export default function SearchResults({ searchQuery, onViewChange }) {
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            {results.length === 0 ? (
+          <div>
+            {sortedAndFilteredResults.length === 0 ? (
               <div className="text-center py-4 text-muted">
                 No results found for "{searchQuery}"
               </div>
             ) : (
-              results.map((result) => (
+              sortedAndFilteredResults.map((result) => (
                 <div 
                   key={result.id}
                   className="border p-3 mb-3 cursor-pointer"
@@ -212,9 +268,10 @@ export default function SearchResults({ searchQuery, onViewChange }) {
                     <div className="col-md-2">
                       <strong>Rating</strong>
                       <div>
-                        {result.rating}
-                        {result.imdbRating && result.imdbRating !== result.rating && (
-                          <div className="small text-success">IMDB: {result.imdbRating}</div>
+                        {result.imdbRating ? (
+                          <div>{result.imdbRating}</div>
+                        ) : (
+                          <div className="text-muted">No rating</div>
                         )}
                         {result.imdbVotes && (
                           <div className="small text-muted">({result.imdbVotes} votes)</div>

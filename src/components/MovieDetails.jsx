@@ -259,7 +259,7 @@ export default function MovieDetails({ movieId, onViewChange }) {
             {/* Movie Details */}
             <div className="col-md-8">
               {/* Plot Section */}
-              <div className="border p-3 mb-3" style={{ height: '200px' }}>
+              <div className="border p-3 mb-3" style={{ height: '200px', overflowY: 'auto' }}>
                 <h5>Plot</h5>
                 <p className="small">{movie.plot}</p>
               </div>
