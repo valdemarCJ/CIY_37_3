@@ -82,18 +82,48 @@ export default function Homepage({ onViewChange }) {
               ApiService.getPopularActors(featured.tconst).catch(() => null)
             ])
 
-            // Process cast with more details  
+            // Process cast with backend person names and TMDB images
             console.log('Featured movie cast:', featured.cast)
-            const detailedCast = (featured.cast || [])
-              .filter(person => person.role === 'actor') // Only actors for featured section
-              .slice(0, 4)
-              .map(person => ({
-                name: person.primaryName || person.name || `Actor ${person.nconst}`,
-                category: person.category || 'Actor',
-                characters: person.characters ? person.characters.replace(/[\[\]']/g, '') : '',
-                nconst: person.nconst,
-                role: person.role
-              }))
+            const detailedCast = await Promise.all(
+              (featured.cast || [])
+                .filter(person => person.role === 'actor') // Only actors for featured section
+                .slice(0, 4)
+                .map(async person => {
+                  // Get backend person data and TMDB data for this person
+                  let backendPersonData = null
+                  let tmdbData = null
+                  let personImages = []
+                  let tmdbName = null
+                  
+                  if (person.nconst) {
+                    try {
+                      // Get backend person data for the name
+                      backendPersonData = await ApiService.getPersonDetails(person.nconst)
+                      
+                      // Get TMDB data for images only
+                      tmdbData = await ApiService.getPersonFromTMDB(person.nconst)
+                      if (tmdbData && tmdbData.id) {
+                        tmdbName = tmdbData.name
+                        personImages = await ApiService.getPersonImages(tmdbData.id)
+                      }
+                    } catch (error) {
+                      console.error(`Error fetching data for ${person.nconst}:`, error)
+                    }
+                  }
+
+                  return {
+                    name: backendPersonData?.name || person.primaryName || person.name || `Actor ${person.nconst}`,
+                    category: person.category || 'Actor',
+                    characters: person.characters ? person.characters.replace(/[\[\]']/g, '') : '',
+                    nconst: person.nconst,
+                    role: person.role,
+                    images: personImages,
+                    tmdbData: tmdbData,
+                    tmdbName: tmdbName,
+                    backendName: backendPersonData?.name
+                  }
+                })
+            )
             
             setFeaturedContent({
               title: featured.title,
@@ -305,19 +335,42 @@ export default function Homepage({ onViewChange }) {
                 {/* Cast */}
                 <div>
                   <h6>Cast</h6>
-                  <div className="small text-muted">
+                  <div className="small">
                     {featuredContent?.actors && featuredContent.actors.length > 0 ? (
                       featuredContent.actors.map((actor, index) => (
-                        <div key={index} className="mb-1">
-                          <strong>{actor.name || actor}</strong>
-                          {actor.category && actor.category !== 'Actor' && (
-                            <span className="text-info"> ({actor.category})</span>
-                          )}
-                          {actor.characters && (
-                            <div className="small text-muted" style={{ fontSize: '0.75rem' }}>
-                              as {actor.characters}
+                        <div key={index} className="d-flex align-items-center mb-2">
+                          {/* Actor Image */}
+                          <div className="me-2" style={{ width: '40px', height: '40px' }}>
+                            {actor.images && actor.images.length > 0 ? (
+                              <img 
+                                src={`https://image.tmdb.org/t/p/w185${actor.images[0].file_path}`}
+                                alt={actor.backendName || actor.name}
+                                className="rounded"
+                                style={{ width: '40px', height: '40px', objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <div 
+                                className="d-flex align-items-center justify-content-center bg-light rounded"
+                                style={{ width: '40px', height: '40px' }}
+                              >
+                                <i className="bi bi-person text-muted small"></i>
+                              </div>
+                            )}
+                          </div>
+                          {/* Actor Info */}
+                          <div>
+                            <div>
+                              <strong>{actor.backendName || actor.name}</strong>
+                              {actor.category && actor.category !== 'Actor' && (
+                                <span className="text-info"> ({actor.category})</span>
+                              )}
                             </div>
-                          )}
+                            {actor.characters && (
+                              <div className="small text-muted" style={{ fontSize: '0.75rem' }}>
+                                as {actor.characters}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))
                     ) : (

@@ -34,13 +34,43 @@ export default function MovieDetails({ movieId, onViewChange }) {
           console.error('Error fetching detailed movie info:', error)
         }
 
-        // Transform cast data
-        const transformedCast = Array.isArray(castData) ? castData.slice(0, 6).map((person, index) => ({
-          id: person.nconst || `person-${index}`,
-          nconst: person.nconst,
-          name: person.primaryName || person.name || `Person ${person.nconst}`,
-          role: person.characters ? person.characters.replace(/[\[\]']/g, '') : person.category || person.role || 'Cast Member'
-        })) : []
+        // Transform cast data with backend person names and TMDB images
+        const transformedCast = Array.isArray(castData) ? await Promise.all(
+          castData.slice(0, 6).map(async (person, index) => {
+            // Get backend person data and TMDB data for this person
+            let backendPersonData = null
+            let tmdbData = null
+            let personImages = []
+            let tmdbName = null
+            
+            if (person.nconst) {
+              try {
+                // Get backend person data for the name
+                backendPersonData = await ApiService.getPersonDetails(person.nconst)
+                
+                // Get TMDB data for images only
+                tmdbData = await ApiService.getPersonFromTMDB(person.nconst)
+                if (tmdbData && tmdbData.id) {
+                  tmdbName = tmdbData.name
+                  personImages = await ApiService.getPersonImages(tmdbData.id)
+                }
+              } catch (error) {
+                console.error(`Error fetching data for ${person.nconst}:`, error)
+              }
+            }
+
+            return {
+              id: person.nconst || `person-${index}`,
+              nconst: person.nconst,
+              name: backendPersonData?.name || person.primaryName || person.name || `Person ${person.nconst}`,
+              role: person.characters ? person.characters.replace(/[\[\]']/g, '') : person.category || person.role || 'Cast Member',
+              images: personImages,
+              tmdbData: tmdbData,
+              tmdbName: tmdbName,
+              backendName: backendPersonData?.name
+            }
+          })
+        ) : []
 
         // Combine all movie information
         const combinedMovie = movieData || movieDetails || {}
@@ -209,19 +239,42 @@ export default function MovieDetails({ movieId, onViewChange }) {
               </div>
 
               {/* Cast Section */}
-              <div className="border p-3 mb-3" style={{ height: '180px', overflowY: 'auto' }}>
+              <div className="border p-3 mb-3" style={{ height: '300px', overflowY: 'auto' }}>
                 <h5>Cast</h5>
                 <div className="row">
                   {cast.length > 0 ? (
                     cast.map((actor) => (
-                      <div key={actor.id} className="col-md-6 mb-2">
-                        <button 
-                          className="btn btn-link p-0 text-start text-decoration-none"
-                          onClick={() => onViewChange('person', { personId: actor.nconst || actor.id })}
-                        >
-                          {actor.name}
-                        </button>
-                        <div className="small text-muted">{actor.role}</div>
+                      <div key={actor.id} className="col-md-6 mb-3">
+                        <div className="d-flex">
+                          {/* Actor Image */}
+                          <div className="me-2" style={{ width: '50px', height: '50px' }}>
+                            {actor.images && actor.images.length > 0 ? (
+                              <img 
+                                src={`https://image.tmdb.org/t/p/w185${actor.images[0].file_path}`}
+                                alt={actor.backendName || actor.name}
+                                className="rounded"
+                                style={{ width: '50px', height: '50px', objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <div 
+                                className="d-flex align-items-center justify-content-center bg-light rounded"
+                                style={{ width: '50px', height: '50px' }}
+                              >
+                                <i className="bi bi-person text-muted"></i>
+                              </div>
+                            )}
+                          </div>
+                          {/* Actor Info */}
+                          <div className="flex-grow-1">
+                            <button 
+                              className="btn btn-link p-0 text-start text-decoration-none fw-bold"
+                              onClick={() => onViewChange('person', { personId: actor.nconst || actor.id })}
+                            >
+                              {actor.backendName || actor.name}
+                            </button>
+                            <div className="small text-muted">{actor.role}</div>
+                          </div>
+                        </div>
                       </div>
                     ))
                   ) : (

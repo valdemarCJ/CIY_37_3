@@ -60,11 +60,21 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
         transformedItems.forEach(async (item, index) => {
           try {
             const castData = await ApiService.getMoviePeople(item.tconst)
+            
+            // Get backend person names for cast
             const cast = Array.isArray(castData) ? 
-              castData.filter(person => person.role === 'actor')
-                      .slice(0, 3)
-                      .map(person => person.primaryName || `Actor ${person.nconst}`) : 
-              []
+              await Promise.all(
+                castData.filter(person => person.role === 'actor')
+                        .slice(0, 3)
+                        .map(async person => {
+                          try {
+                            const backendPersonData = await ApiService.getPersonDetails(person.nconst)
+                            return backendPersonData?.name || person.primaryName || `Actor ${person.nconst}`
+                          } catch (error) {
+                            return person.primaryName || `Actor ${person.nconst}`
+                          }
+                        })
+              ) : []
             
             // Update only this item's cast
             setItems(prevItems => 

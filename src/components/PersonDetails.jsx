@@ -15,40 +15,105 @@ export default function PersonDetails({ personId, onViewChange }) {
       setError(null)
 
       try {
-        // Fetch person data and filmography in parallel
-        const [personData, filmography] = await Promise.all([
-          ApiService.getNameBasics(personId).catch(() => null),
-          ApiService.getPersonFilmography(personId).catch(() => null)
+        console.log('Fetching person data for:', personId)
+        
+        // Fetch both backend person data and TMDB data in parallel
+        const [personData, tmdbPersonData] = await Promise.all([
+          ApiService.getPersonDetails(personId).catch(err => {
+            console.error('Error fetching backend person data:', err)
+            return null
+          }),
+          ApiService.getPersonFromTMDB(personId).catch(err => {
+            console.error('Error fetching TMDB data:', err)
+            return null
+          })
         ])
         
-        if (!personData) {
+        console.log('Backend person data received:', personData)
+        console.log('TMDB data received:', tmdbPersonData)
+        
+        if (!personData && !tmdbPersonData) {
           throw new Error('Person not found')
         }
 
-        // Transform filmography data
-        const movies = (filmography?.items || filmography || []).slice(0, 10).map((movie) => ({
-          id: movie.tconst,
-          tconst: movie.tconst,
-          title: movie.primaryTitle || movie.title || 'Unknown Title',
-          year: movie.startYear,
-          role: movie.category || 'Unknown Role',
-          rating: movie.averageRating || 'N/A'
-        }))
+        // Get person images from TMDB if available
+        let personImages = []
+        let tmdbName = null
+        if (tmdbPersonData && tmdbPersonData.id) {
+          console.log('TMDB Person found:', tmdbPersonData)
+          tmdbName = tmdbPersonData.name
+          console.log('TMDB Name:', tmdbName)
+          try {
+            personImages = await ApiService.getPersonImages(tmdbPersonData.id)
+            console.log('TMDB Images fetched:', personImages.length, 'images')
+            if (personImages.length > 0) {
+              console.log('First image:', personImages[0])
+            }
+          } catch (error) {
+            console.error('Error fetching person images:', error)
+          }
+        }
+
+        // Get person's movies from backend
+        let backendMovies = []
+        try {
+          const personMoviesResponse = await ApiService.getPersonMovies(personId)
+          console.log('Person movies received:', personMoviesResponse)
+          
+          if (personMoviesResponse && personMoviesResponse.length > 0) {
+            // Get details for each movie
+            backendMovies = await Promise.all(
+              personMoviesResponse.slice(0, 6).map(async (tconst) => {
+                try {
+                  const [movieData, imdbRating] = await Promise.all([
+                    ApiService.getMovie(tconst).catch(() => null),
+                    ApiService.getImdbRating(tconst).catch(() => null)
+                  ])
+                  
+                  return {
+                    id: tconst,
+                    tconst: tconst,
+                    title: movieData?.primaryTitle || movieData?.title || 'Unknown Title',
+                    year: movieData?.startYear || 'Unknown',
+                    rating: imdbRating?.averageRating || movieData?.averageRating || 'N/A',
+                    poster: movieData?.poster || null
+                  }
+                } catch (error) {
+                  console.error(`Error fetching movie details for ${tconst}:`, error)
+                  return {
+                    id: tconst,
+                    tconst: tconst,
+                    title: 'Unknown Title',
+                    year: 'Unknown',
+                    rating: 'N/A',
+                    poster: null
+                  }
+                }
+              })
+            )
+          }
+        } catch (error) {
+          console.error('Error fetching person movies:', error)
+        }
 
         setPerson({
           id: personId,
-          nconst: personData.nconst || personId,
-          name: personData.primaryName || personData.name || 'Unknown Person',
-          birthYear: personData.birthYear || 'Unknown',
-          deathYear: personData.deathYear || null,
-          role: personData.primaryProfession || 'Actor/Actress',
-          knownFor: personData.knownForTitles || 'Various works',
-          rating: '0.0', // Person ratings may not be available in API
-          starringIn: movies,
-          isAlive: !personData.deathYear,
-          professions: personData.primaryProfession ? 
-                      personData.primaryProfession.split(',').map(p => p.trim()) : 
-                      ['Actor/Actress']
+          nconst: personId,
+          name: personData?.name || 'Unknown Person',
+          birthYear: personData?.birthYear || 'Unknown',
+          deathYear: personData?.deathYear || null,
+          role: personData?.primaryProfession || 'Unknown',
+          knownFor: backendMovies.length > 0 ? 
+            backendMovies.slice(0, 3).map(movie => movie.title).join(', ') : 
+            'Information from backend database',
+          rating: personData?.nameRating ? personData.nameRating.toFixed(1) : '0.0',
+          starringIn: backendMovies,
+          isAlive: !personData?.deathYear || personData?.deathYear === '',
+          professions: personData?.primaryProfession ? 
+                      personData.primaryProfession.split(',').map(prof => prof.trim()) : 
+                      ['Unknown'],
+          images: personImages,
+          backendName: personData?.name // Only store backend name
         })
       } catch (err) {
         console.error('Error fetching person details:', err)
@@ -97,10 +162,27 @@ export default function PersonDetails({ personId, onViewChange }) {
   return (
     <div className="container mt-4">
       <div className="row">
+        <div className="col-md-4">
+          {/* Person Image */}
+          <div className="mb-4">
+            {person.images && person.images.length > 0 ? (
+              <img 
+                src={`https://image.tmdb.org/t/p/w500${person.images[0].file_path}`}
+                alt={person.backendName || person.name}
+                className="img-fluid rounded shadow"
+                style={{ maxHeight: '500px', width: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <div className="d-flex align-items-center justify-content-center bg-light rounded shadow" style={{ height: '300px' }}>
+                <i className="bi bi-person-circle text-muted" style={{ fontSize: '5rem' }}></i>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="col-md-8">
           {/* Person Info */}
           <h1 className="mb-2">
-            {person.name}
+            {person.backendName || person.name}
             {!person.isAlive && <span className="badge bg-secondary ms-2">Deceased</span>}
           </h1>
           <p className="text-muted mb-4">
@@ -111,6 +193,32 @@ export default function PersonDetails({ personId, onViewChange }) {
               </span>
             )}
           </p>
+
+          {/* Rating Section */}
+          <div className="row mb-4">
+            <div className="col-md-6">
+              <div className="border p-3 text-center bg-light">
+                <h6>Rating</h6>
+                <div className="fs-4 text-primary fw-bold">{person.rating || '0.0'}</div>
+                <div className="mt-2">
+                  <button className="btn btn-outline-primary btn-sm me-2" onClick={handleRatingSubmit}>
+                    Rate Person
+                  </button>
+                  <input
+                    type="number"
+                    className="form-control form-control-sm d-inline-block"
+                    style={{ width: '80px' }}
+                    placeholder="0-10"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    value={userRating}
+                    onChange={(e) => setUserRating(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div className="row mb-4">
             <div className="col-md-6">
@@ -128,75 +236,61 @@ export default function PersonDetails({ personId, onViewChange }) {
             <div className="col-md-6">
               <div className="border p-3">
                 <h5>Known For</h5>
-                <p className="small">{person.knownFor}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Filmography Section */}
-          <div className="border p-3">
-            <h5 className="mb-3">Filmography:</h5>
-            {person.starringIn && person.starringIn.length > 0 ? (
-              person.starringIn.map((movie) => (
-                <div 
-                  key={movie.id}
-                  className="border p-3 mb-3 bg-light"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onViewChange('movie-details', { movieId: movie.tconst })}
-                >
-                  <div className="row align-items-center">
-                    <div className="col-md-5">
-                      <strong>{movie.title}</strong>
-                      {movie.year && <span className="text-muted ms-2">({movie.year})</span>}
+                <div className="small">
+                  {person.starringIn && person.starringIn.length > 0 ? (
+                    <div>
+                      <strong>Top rated movie/series:</strong>
+                      <div className="mt-2">
+                        {person.starringIn
+                          .sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0))
+                          .slice(0, 3)
+                          .map((movie, index) => (
+                            <div key={movie.id} className="mb-1">
+                              <button 
+                                className="btn btn-link p-0 text-start text-decoration-none small fw-bold"
+                                onClick={() => onViewChange('movie-details', { movieId: movie.tconst })}
+                              >
+                                {movie.title}
+                              </button>
+                              <span className="text-muted ms-1">({movie.year}) - {movie.rating}</span>
+                            </div>
+                          ))
+                        }
+                      </div>
+                      
+                      {/* Movie posters */}
+                      <div className="mt-3">
+                        <div className="row">
+                          {person.starringIn.slice(0, 6).map((movie) => (
+                            <div key={movie.id} className="col-4 col-md-4 mb-2">
+                              <div 
+                                className="movie-poster-small"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => onViewChange('movie-details', { movieId: movie.tconst })}
+                              >
+                                {movie.poster ? (
+                                  <img 
+                                    src={movie.poster}
+                                    alt={movie.title}
+                                    className="img-fluid rounded"
+                                    style={{ height: '80px', width: '100%', objectFit: 'cover' }}
+                                  />
+                                ) : (
+                                  <div className="bg-light d-flex align-items-center justify-content-center rounded" 
+                                       style={{ height: '80px' }}>
+                                    <i className="bi bi-film text-muted"></i>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    <div className="col-md-3">
-                      <span className="text-primary">Rating: {movie.rating}</span>
-                    </div>
-                    <div className="col-md-4">
-                      <span className="badge bg-info">{movie.role}</span>
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="small">{person.knownFor}</p>
+                  )}
                 </div>
-              ))
-            ) : (
-              <div className="text-muted">No filmography data available</div>
-            )}
-          </div>
-        </div>
-
-        {/* Rating Section */}
-        <div className="col-md-4">
-          <div className="text-center">
-            <h3>Rating:</h3>
-            <div className="display-4 mb-3">{person.rating}</div>
-            
-            <div className="border p-3">
-              <input 
-                type="number" 
-                className="form-control mb-2"
-                placeholder="Rate this person (1-10)"
-                min="1" 
-                max="10" 
-                step="0.1"
-                value={userRating}
-                onChange={(e) => setUserRating(e.target.value)}
-              />
-              <button 
-                className="btn btn-primary w-100"
-                onClick={handleRatingSubmit}
-              >
-                Submit Rating
-              </button>
-            </div>
-
-            {/* Person Photo */}
-            <div 
-              className="bg-light d-flex align-items-center justify-content-center text-muted border mt-3"
-              style={{ height: '200px', width: '100%' }}
-            >
-              <div className="text-center">
-                <i className="bi bi-person fs-1"></i>
-                <div>👤</div>
               </div>
             </div>
           </div>

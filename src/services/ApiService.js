@@ -25,6 +25,9 @@ class ApiService {
       return await response.json()
     } catch (error) {
       console.error(`API Error for ${endpoint}:`, error)
+      if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
+        throw new Error('Cannot connect to backend server. Please ensure the backend is running.')
+      }
       throw error
     }
   }
@@ -154,13 +157,28 @@ class ApiService {
     return this.makeRequest(`/search?query=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}`)
   }
 
-  // Name basics (for person details)
-  async getNameBasics(nconst) {
-    return this.makeRequest(`/name-basics/${nconst}`)
+  // People endpoints
+  async getPeople(page = 1, pageSize = 20) {
+    return this.makeRequest(`/people?page=${page}&pageSize=${pageSize}`)
   }
 
-  async getPersonFilmography(nconst, page = 1, pageSize = 20) {
-    return this.makeRequest(`/name-basics/${nconst}/movies?page=${page}&pageSize=${pageSize}`)
+  async getPersonDetails(nconst) {
+    return this.makeRequest(`/people/${nconst}`)
+  }
+
+  // Note: Person filmography endpoint not available on backend
+  // async getPersonFilmography(nconst, page = 1, pageSize = 20) {
+  //   return this.makeRequest(`/people/${nconst}/movies?page=${page}&pageSize=${pageSize}`)
+  // }
+
+  // Get movies for a person (nconst -> list of tconst)
+  async getPersonMovies(nconst) {
+    return this.makeRequest(`/person-knownfor/by-person/${nconst}`)
+  }
+
+  // Get people for a movie (tconst -> list of nconst) 
+  async getMoviePersons(tconst) {
+    return this.makeRequest(`/movies/${tconst}/people`)
   }
 
   // Watch history
@@ -177,6 +195,35 @@ class ApiService {
   logout() {
     this.token = null
     localStorage.removeItem('authToken')
+  }
+
+  // TheMovieDB API calls for person images
+  async getPersonFromTMDB(nconst) {
+    try {
+      const response = await fetch(`https://api.themoviedb.org/3/find/${nconst}?external_source=imdb_id&api_key=ebcd153ea717146b23d6c12eeb847b80`)
+      if (!response.ok) {
+        throw new Error(`TMDB API request failed: ${response.status}`)
+      }
+      const data = await response.json()
+      return data.person_results && data.person_results.length > 0 ? data.person_results[0] : null
+    } catch (error) {
+      console.error(`Error fetching person from TMDB for ${nconst}:`, error)
+      return null
+    }
+  }
+
+  async getPersonImages(tmdbPersonId) {
+    try {
+      const response = await fetch(`https://api.themoviedb.org/3/person/${tmdbPersonId}/images?api_key=ebcd153ea717146b23d6c12eeb847b80`)
+      if (!response.ok) {
+        throw new Error(`TMDB images API request failed: ${response.status}`)
+      }
+      const data = await response.json()
+      return data.profiles || []
+    } catch (error) {
+      console.error(`Error fetching person images for ID ${tmdbPersonId}:`, error)
+      return []
+    }
   }
 }
 

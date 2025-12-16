@@ -37,6 +37,19 @@ export default function SearchResults({ searchQuery, onViewChange }) {
                 ApiService.getMovieGenres(tconst).catch(() => null)
               ])
 
+              // Get backend person names for cast
+              const castWithBackendNames = Array.isArray(cast) ? 
+                await Promise.all(
+                  cast.filter(person => person.role === 'actor').slice(0, 3).map(async person => {
+                    try {
+                      const backendPersonData = await ApiService.getPersonDetails(person.nconst)
+                      return backendPersonData?.name || person.primaryName || `Actor ${person.nconst}`
+                    } catch (error) {
+                      return person.primaryName || `Actor ${person.nconst}`
+                    }
+                  })
+                ) : []
+
               return {
                 id: tconst,
                 tconst: tconst,
@@ -45,7 +58,7 @@ export default function SearchResults({ searchQuery, onViewChange }) {
                 rating: item.averageRating || movieDetails?.averageRating || 'N/A',
                 imdbRating: imdbRating?.averageRating || null,
                 imdbVotes: imdbRating?.numVotes || null,
-                actors: Array.isArray(cast) ? cast.filter(person => person.role === 'actor').slice(0, 3).map(c => c.primaryName || `Actor ${c.nconst}`) : [],
+                actors: castWithBackendNames,
                 plot: movieDetails?.plot || item.plot || 'No plot available...',
                 poster: item.poster || movieDetails?.poster,
                 year: item.startYear || movieDetails?.startYear,
