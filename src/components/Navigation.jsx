@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function Navigation({ currentView, onViewChange, onShowLoginModal }) {
+export default function Navigation({ currentView, onViewChange, onShowLoginModal, user, onLogout }) {
   const [searchQuery, setSearchQuery] = useState('')
 
   const handleSearch = (e) => {
@@ -54,12 +54,26 @@ export default function Navigation({ currentView, onViewChange, onShowLoginModal
           >
             User page
           </button>
-          <button 
-            className="btn btn-dark px-3"
-            onClick={onShowLoginModal}
-          >
-            Login/ signup
-          </button>
+          {user ? (
+            <div className="d-flex align-items-center gap-2">
+              <span className="text-dark" style={{ fontSize: '0.9rem' }}>
+                Welcome, <strong>{user}</strong>
+              </span>
+              <button 
+                className="btn btn-outline-dark px-3"
+                onClick={onLogout}
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <button 
+              className="btn btn-dark px-3"
+              onClick={onShowLoginModal}
+            >
+              Login/ signup
+            </button>
+          )}
         </div>
       </div>
     </nav>

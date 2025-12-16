@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 
 // Import components
@@ -10,25 +10,54 @@ import UserProfile from './components/UserProfile'
 import PersonDetails from './components/PersonDetails'
 import LoginModal from './components/LoginModal'
 import TopMoviesSeriesList from './components/TopMoviesSeriesList'
+import AuthDebug from './components/AuthDebug'
 
-function App() {
+// Import Auth
+import { AuthProvider, useAuth } from './context/AuthContext'
+
+function AppContent() {
   const [currentView, setCurrentView] = useState('home')
   const [viewData, setViewData] = useState({})
   const [showLoginModal, setShowLoginModal] = useState(false)
-  const [user, setUser] = useState(null) // null when not logged in
+  const [showExpirationWarning, setShowExpirationWarning] = useState(false)
+  const [username, setUsername] = useState(null)
+
+  const { isTokenExpired, logout, isAuthenticated } = useAuth()
+
+  // Check if token expired and redirect to login
+  useEffect(() => {
+    if (isTokenExpired && username) {
+      setShowExpirationWarning(true)
+      handleLogout()
+      setShowLoginModal(true)
+    }
+  }, [isTokenExpired, username])
+
+  // Listen for unauthorized logout events from API
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      handleLogout()
+      setShowLoginModal(true)
+    }
+
+    window.addEventListener('auth:logout', handleUnauthorized)
+    return () => window.removeEventListener('auth:logout', handleUnauthorized)
+  }, [])
 
   const handleViewChange = (view, data = {}) => {
     setCurrentView(view)
     setViewData(data)
   }
 
-  const handleLogin = (username) => {
-    setUser(username)
+  const handleLogin = (loginUsername) => {
+    setUsername(loginUsername)
     setShowLoginModal(false)
+    setShowExpirationWarning(false)
   }
 
   const handleLogout = () => {
-    setUser(null)
+    setUsername(null)
+    logout()
     setCurrentView('home')
   }
 
@@ -55,11 +84,20 @@ function App() {
 
   return (
     <div>
+      {showExpirationWarning && (
+        <div className="alert alert-warning alert-dismissible fade show" role="alert">
+          <strong>Session Expired:</strong> Your login session has expired. Please login again.
+          <button type="button" className="btn-close" onClick={() => setShowExpirationWarning(false)}></button>
+        </div>
+      )}
+
+      <AuthDebug />
+      
       <Navigation 
         currentView={currentView}
         onViewChange={handleViewChange}
         onShowLoginModal={() => setShowLoginModal(true)}
-        user={user}
+        user={username}
         onLogout={handleLogout}
       />
       
@@ -71,6 +109,14 @@ function App() {
         onLogin={handleLogin}
       />
     </div>
+  )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   )
 }
 
