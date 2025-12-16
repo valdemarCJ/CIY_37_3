@@ -1,26 +1,56 @@
 import { useState, useEffect } from 'react'
 import ApiService from '../services/ApiService'
+import { useAuth } from '../context/AuthContext'
+
+// Function to decode JWT token payload to get user ID
+const decodeJWTPayload = (token) => {
+  try {
+    if (!token) return null
+    const base64Url = token.split('.')[1]
+    if (!base64Url) return null
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    }).join(''))
+    return JSON.parse(jsonPayload)
+  } catch (error) {
+    console.error('Error decoding JWT:', error)
+    return null
+  }
+}
 
 export default function UserProfile({ onViewChange, user }) {
   const [bookmarks, setBookmarks] = useState([])
   const [userRatings, setUserRatings] = useState([])
-  const [watchHistory, setWatchHistory] = useState([])
+  const [searchHistory, setSearchHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const userId = 1 // In real app, this would come from user context/auth
+  
+  // Get user ID from JWT token
+  const { token } = useAuth()
+  const tokenPayload = token ? decodeJWTPayload(token) : null
+  const userId = tokenPayload?.sub ? parseInt(tokenPayload.sub, 10) : null
 
   useEffect(() => {
     const fetchUserProfile = async () => {
+      if (!userId) {
+        setError('No user ID found. Please login again.')
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       setError(null)
       
       try {
+        console.log('Fetching user profile for user ID:', userId)
+        
         // Get user details and additional user data in parallel
-        const [userDetails, bookmarksResponse, ratingsResponse, watchHistory] = await Promise.all([
+        const [userDetails, bookmarksResponse, ratingsResponse, searchHistoryResponse] = await Promise.all([
           ApiService.getUser(userId).catch(() => null),
           ApiService.getUserBookmarks(userId).catch(() => null),
           ApiService.getUserRatingHistory(userId).catch(() => null),
-          ApiService.getWatchHistory(userId).catch(() => null)
+          ApiService.getUserSearchHistory(userId).catch(() => null)
         ])
 
         // Transform bookmarks data with enriched information
@@ -90,21 +120,21 @@ export default function UserProfile({ onViewChange, user }) {
           )
         }
 
-        // Transform watch history data
-        let watchData = []
-        if (watchHistory?.items || watchHistory) {
-          const history = watchHistory.items || watchHistory || []
-          watchData = history.slice(0, 5).map((item, index) => ({
-            id: index + 1,
-            tconst: item.tconst,
-            title: item.title || `Movie ${index + 1}`,
-            watchedAt: item.watchedAt || new Date().toISOString()
+        // Transform search history data
+        let searchHistoryData = []
+        if (searchHistoryResponse?.items || searchHistoryResponse) {
+          const searches = searchHistoryResponse.items || searchHistoryResponse || []
+          searchHistoryData = searches.slice(0, 10).map((search, index) => ({
+            id: search.id || index + 1,
+            query: search.query || search.searchTerm || 'Unknown search',
+            timestamp: search.timestamp || search.searchedAt || new Date().toISOString(),
+            results: search.resultsCount || search.results || 0
           }))
         }
 
         setBookmarks(bookmarksData)
         setUserRatings(ratingsData)
-        setWatchHistory(watchData)
+        setSearchHistory(searchHistoryData)
       } catch (err) {
         console.error('Error fetching user profile:', err)
         setError('Failed to load user profile')
@@ -112,7 +142,7 @@ export default function UserProfile({ onViewChange, user }) {
         // Set placeholder data if API fails
         setBookmarks([])
         setUserRatings([])
-        setWatchHistory([])
+        setSearchHistory([])
       } finally {
         setLoading(false)
       }
@@ -219,31 +249,31 @@ export default function UserProfile({ onViewChange, user }) {
           </div>
         </div>
 
-        {/* Watch History */}
+        {/* Search History */}
         <div className="col-md-4">
           <div className="border p-3 h-100">
-            <h3 className="mb-3">Watch History</h3>
+            <h3 className="mb-3">Search History</h3>
             <div className="border p-2" style={{ height: '250px', overflowY: 'auto' }}>
-              {watchHistory.length > 0 ? (
+              {searchHistory.length > 0 ? (
                 <ul className="list-unstyled mb-0">
-                  {watchHistory.map((item) => (
+                  {searchHistory.map((search) => (
                     <li 
-                      key={item.id} 
+                      key={search.id} 
                       className="mb-2 p-2 bg-light rounded"
                       style={{ cursor: 'pointer' }}
-                      onClick={() => onViewChange('movie-details', { movieId: item.tconst })}
+                      onClick={() => onViewChange('search', { query: search.query })}
                     >
                       <div>
-                        <strong>{item.title}</strong>
+                        <strong>"{search.query}"</strong>
                       </div>
                       <div className="small text-muted">
-                        Watched: {new Date(item.watchedAt).toLocaleDateString()}
+                        {search.results} results • {new Date(search.timestamp).toLocaleDateString()}
                       </div>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <div className="text-muted">No watch history found</div>
+                <div className="text-muted">No search history found</div>
               )}
             </div>
           </div>

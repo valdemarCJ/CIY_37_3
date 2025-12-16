@@ -35,8 +35,31 @@ export default function MovieDetails({ movieId, onViewChange }) {
         }
 
         // Transform cast data with backend person names and TMDB images
-        const transformedCast = Array.isArray(castData) ? await Promise.all(
-          castData.slice(0, 6).map(async (person, index) => {
+        // First sort by ordering field: 1, 2, 3... then 0s
+        const sortedCastData = Array.isArray(castData) ? 
+          castData.sort((a, b) => {
+            const orderingA = a.ordering || 0
+            const orderingB = b.ordering || 0
+            
+            // If both have ordering > 0, sort by ordering value
+            if (orderingA > 0 && orderingB > 0) {
+              return orderingA - orderingB
+            }
+            // If one has ordering > 0 and other is 0, prioritize the one > 0
+            if (orderingA > 0 && orderingB === 0) {
+              return -1
+            }
+            if (orderingA === 0 && orderingB > 0) {
+              return 1
+            }
+            // Both are 0, maintain original order
+            return 0
+          }) : []
+        
+        console.log('Sorted cast data by ordering:', sortedCastData.map(p => ({ nconst: p.nconst, role: p.role, ordering: p.ordering })))
+        
+        const transformedCast = await Promise.all(
+          sortedCastData.map(async (person, index) => {
             // Get backend person data and TMDB data for this person
             let backendPersonData = null
             let tmdbData = null
@@ -59,18 +82,21 @@ export default function MovieDetails({ movieId, onViewChange }) {
               }
             }
 
-            return {
+              return {
               id: person.nconst || `person-${index}`,
               nconst: person.nconst,
               name: backendPersonData?.name || person.primaryName || person.name || `Person ${person.nconst}`,
               role: person.characters ? person.characters.replace(/[\[\]']/g, '') : person.category || person.role || 'Cast Member',
+              ordering: person.ordering || 0,
+              category: person.category,
+              jobTitle: person.role,
               images: personImages,
               tmdbData: tmdbData,
               tmdbName: tmdbName,
               backendName: backendPersonData?.name
             }
           })
-        ) : []
+        )
 
         // Combine all movie information
         const combinedMovie = movieData || movieDetails || {}
@@ -243,8 +269,8 @@ export default function MovieDetails({ movieId, onViewChange }) {
                 <h5>Cast</h5>
                 <div className="row">
                   {cast.length > 0 ? (
-                    cast.map((actor) => (
-                      <div key={actor.id} className="col-md-6 mb-3">
+                    cast.map((actor, index) => (
+                      <div key={`${actor.nconst || actor.id}-${index}`} className="col-md-6 mb-3">
                         <div className="d-flex">
                           {/* Actor Image */}
                           <div className="me-2" style={{ width: '50px', height: '50px' }}>

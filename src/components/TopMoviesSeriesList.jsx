@@ -23,13 +23,15 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
         const filteredItems = response.items || response || []
         console.log(`${isMovies ? 'Movies' : 'Series'} received:`, filteredItems.length)
 
-        // Transform data WITHOUT cast first (for faster loading)
+        // Transform data WITHOUT cast and detailed info first (for faster loading)
         const transformedItems = filteredItems.map((item, index) => ({
           id: item.tconst || item.id || index,
           tconst: item.tconst,
           title: item.primaryTitle || item.title || `${isMovies ? 'Movie' : 'Series'} ${index + 1}`,
           originalTitle: item.originalTitle,
           rating: item.averageRating || '0.0',
+          imdbRating: null, // Will be updated after IMDB rating loads
+          imdbVotes: null,
           actors: ['Loading cast...'], // Will be updated after cast loads
           genre: item.genres ? item.genres.split(',')[0] : (isMovies ? 'Action' : 'Drama'),
           seasons: !isMovies ? (item.seasons || 'Unknown') : null,
@@ -47,7 +49,7 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
                 item.titleType === 'video' ? 'Video' :
                 item.titleType || 'Unknown',
           titleType: item.titleType,
-          poster: item.poster,
+          poster: null, // Will be updated after poster loads
           year: item.startYear,
           endYear: item.endYear,
           isAdult: item.isAdult
@@ -56,10 +58,15 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
         // Set items first for immediate display
         setItems(transformedItems)
 
-        // Then load cast data asynchronously
+        // Then load detailed data asynchronously (poster, rating, cast)
         transformedItems.forEach(async (item, index) => {
           try {
-            const castData = await ApiService.getMoviePeople(item.tconst)
+            // Fetch poster, rating and cast in parallel
+            const [movieDetails, imdbRating, castData] = await Promise.all([
+              ApiService.getMovieDetails(item.tconst).catch(() => null),
+              ApiService.getImdbRating(item.tconst).catch(() => null),
+              ApiService.getMoviePeople(item.tconst).catch(() => null)
+            ])
             
             // Get backend person names for cast
             const cast = Array.isArray(castData) ? 
@@ -76,20 +83,27 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
                         })
               ) : []
             
-            // Update only this item's cast
+            // Update this item with poster, rating and cast
             setItems(prevItems => 
               prevItems.map((prevItem, prevIndex) => 
                 prevIndex === index ? 
-                  { ...prevItem, actors: cast.length > 0 ? cast : ['Cast information unavailable'] } : 
+                  { 
+                    ...prevItem, 
+                    actors: cast.length > 0 ? cast : ['Cast information unavailable'],
+                    poster: movieDetails?.poster || null,
+                    imdbRating: imdbRating?.averageRating || prevItem.rating,
+                    imdbVotes: imdbRating?.numVotes || null,
+                    rating: imdbRating?.averageRating || prevItem.rating
+                  } : 
                   prevItem
               )
             )
           } catch (error) {
-            console.error(`Error fetching cast for ${item.tconst}:`, error)
+            console.error(`Error fetching detailed data for ${item.tconst}:`, error)
             setItems(prevItems => 
               prevItems.map((prevItem, prevIndex) => 
                 prevIndex === index ? 
-                  { ...prevItem, actors: ['Cast information unavailable'] } : 
+                  { ...prevItem, actors: ['Information unavailable'] } : 
                   prevItem
               )
             )
@@ -185,7 +199,10 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
               <div className="col-md-2">
                 <div>
                   <strong>Rating</strong>
-                  <div>{item.rating}</div>
+                  <div>⭐ {item.rating}</div>
+                  {item.imdbVotes && (
+                    <div className="small text-muted">{item.imdbVotes.toLocaleString()} votes</div>
+                  )}
                 </div>
               </div>
               <div className="col-md-2">

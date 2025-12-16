@@ -13,157 +13,259 @@ export default function Homepage({ onViewChange }) {
       setError(null)
 
       try {
-        // Get movies directly using new endpoint
-        const moviesResponse = await ApiService.getMoviesOnly(1, 10)
-        const movies = moviesResponse.items || moviesResponse || []
-        console.log('Homepage - Movies received:', movies.length)
+        // Get movies from multiple pages since we can use pageSize up to 200
+        const allRatings = []
+        const featuredCandidates = []
+        const maxPages = 3 // Get 600 movies (3 pages × 200 = 600)
         
-        // Enrich movies with additional data (using built-in data from movies API)
-        const enrichedMovies = await Promise.all(
-          movies.map(async (movie, index) => {
-            try {
-              // Fetch missing data including plot from MovieDetails
-              const [imdbRating, movieGenres, cast, movieDetails] = await Promise.all([
-                ApiService.getImdbRating(movie.tconst).catch(() => null),
-                ApiService.getMovieGenres(movie.tconst).catch(() => null),
-                ApiService.getMoviePeople(movie.tconst).catch(() => null),
-                ApiService.getMovieDetails(movie.tconst).catch(() => null)
-              ])
+        console.log(`Fetching ${maxPages} pages of ratings (200 per page)...`)
+        for (let page = 1; page <= maxPages; page++) {
+          try {
+            const ratingsResponse = await ApiService.getImdbRatings(page, 200)
+            const pageRatings = ratingsResponse.items || ratingsResponse || []
+            allRatings.push(...pageRatings)
+            
+            // Collect 10k+ vote candidates as we go
+            const pageCandidates = pageRatings.filter(rating => (rating.numVotes || 0) >= 10000)
+            featuredCandidates.push(...pageCandidates)
+            
+            console.log(`Fetched page ${page}, total ratings: ${allRatings.length}, featured candidates: ${featuredCandidates.length}`)
+            
+            // Small delay between pages
+            await new Promise(resolve => setTimeout(resolve, 100))
+          } catch (error) {
+            console.error(`Error fetching page ${page}:`, error)
+            break
+          }
+        }
+        
+        console.log('Homepage - Total IMDB Ratings received:', allRatings.length)
+        console.log('Homepage - Featured candidates (10k+ votes):', featuredCandidates.length)
+        
+        // Take top rated movies for main list (first 100 sorted by rating)
+        const topRatedMovies = allRatings
+          .filter(rating => (rating.numVotes || 0) >= 10000) // At least 1k votes
+          .sort((a, b) => parseFloat(b.averageRating || 0) - parseFloat(a.averageRating || 0))
+          .slice(0, 100) // Take top 100 for processing
+        
+        console.log('Homepage - Top rated movies for processing:', topRatedMovies.length)
+        
+        // Enrich with movie details and additional data (smaller batches to avoid server overload)
+        const batchSize = 5  // Reduced batch size
+        const enrichedMovies = []
+        
+        for (let i = 0; i < topRatedMovies.length; i += batchSize) {
+          const batch = topRatedMovies.slice(i, i + batchSize)
+          console.log(`Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(topRatedMovies.length/batchSize)}`)
+          
+          const batchResults = await Promise.all(
+            batch.map(async (rating, index) => {
+              try {
+                const tconst = rating.tconst
+                
+                // First check if the movie exists
+                const movieData = await ApiService.getMovie(tconst).catch(() => null)
+                
+                // If movie doesn't exist in main table, skip additional calls
+                if (!movieData) {
+                  console.log(`Movie ${tconst} not found in main table, skipping additional calls`)
+                  return {
+                    id: tconst,
+                    tconst: tconst,
+                    title: `Movie ${i + index + 1}`,
+                    rating: rating.averageRating || '0.0',
+                    imdbRating: rating.averageRating,
+                    imdbVotes: rating.numVotes || 0,
+                    plot: 'Movie information not available',
+                    poster: null,
+                    genres: 'Unknown',
+                    genresArray: [],
+                    year: null,
+                    titleType: null,
+                    cast: []
+                  }
+                }
+                
+                // If movie exists, fetch additional data sequentially to reduce server load
+                let movieGenres = null
+                let cast = null
+                let movieDetails = null
+                
+                try {
+                  movieGenres = await ApiService.getMovieGenres(tconst)
+                } catch (err) {
+                  console.log(`Genres not available for ${tconst}`)
+                }
+                
+                try {
+                  cast = await ApiService.getMoviePeople(tconst)
+                } catch (err) {
+                  console.log(`Cast not available for ${tconst}`)
+                }
+                
+                try {
+                  movieDetails = await ApiService.getMovieDetails(tconst)
+                } catch (err) {
+                  console.log(`Details not available for ${tconst}`)
+                }
 
-              console.log('Cast data for', movie.tconst, ':', cast)
+                console.log('Cast data for', tconst, ':', cast)
 
-              // Process genres data
+                // Process genres data
+                const genresArray = movieGenres?.items || movieGenres || []
+                const genresString = genresArray.length > 0 
+                  ? genresArray.map(g => g.genre || g).join(', ')
+                  : 'Unknown'
+
+                return {
+                  id: tconst,
+                  tconst: tconst,
+                  title: movieData.primaryTitle || movieData.title || `Movie ${i + index + 1}`,
+                  originalTitle: movieData.originalTitle,
+                  rating: rating.averageRating || '0.0',
+                  originalRating: movieData.averageRating,
+                  imdbRating: rating.averageRating,
+                  imdbVotes: rating.numVotes || 0,
+                  plot: movieDetails?.plot || 'Plot information not available',
+                  poster: movieDetails?.poster || movieData.poster || null,
+                  genres: genresString,
+                  genresArray: genresArray,
+                  year: movieData.startYear,
+                  endYear: movieData.endYear,
+                  runtime: movieData.runtimeMinutes,
+                  titleType: movieData.titleType,
+                  cast: Array.isArray(cast) ? cast : [],
+                  isAdult: movieData.isAdult
+                }
+              } catch (error) {
+                console.error(`Error enriching movie ${rating.tconst}:`, error)
+                return {
+                  id: rating.tconst,
+                  tconst: rating.tconst,
+                  title: `Movie ${i + index + 1}`,
+                  rating: rating.averageRating || '0.0',
+                  imdbRating: rating.averageRating,
+                  imdbVotes: rating.numVotes || 0,
+                  poster: null,
+                  genres: 'Unknown',
+                  genresArray: [],
+                  cast: []
+                }
+              }
+            })
+          )
+          
+          enrichedMovies.push(...batchResults)
+          
+          // Longer delay between batches to avoid overwhelming server
+          if (i + batchSize < topRatedMovies.length) {
+            await new Promise(resolve => setTimeout(resolve, 300))
+          }
+        }
+
+        // Filter and sort the enriched movies (they should already have 1k+ votes)
+        const filteredAndSortedMovies = enrichedMovies
+          .filter(movie => {
+            const votes = movie.imdbVotes || 0
+            const rating = parseFloat(movie.imdbRating || movie.rating || 0)
+            return votes >= 1000 && rating > 0 // Double check votes and rating
+          })
+          .sort((a, b) => {
+            // Sort by IMDB rating (highest first)
+            const ratingA = parseFloat(a.imdbRating || a.rating || 0)
+            const ratingB = parseFloat(b.imdbRating || b.rating || 0)
+            return ratingB - ratingA
+          })
+          .slice(0, 50) // Take top 50
+
+        console.log(`Processed ${enrichedMovies.length} movies, filtered to ${filteredAndSortedMovies.length} with 10k+ votes`)
+        setTopMovies(filteredAndSortedMovies)
+
+        // Get random featured movie from the 10k+ vote candidates
+        try {
+          console.log(`Found ${featuredCandidates.length} movies with 10k+ votes for featured selection`)
+          
+          if (featuredCandidates.length > 0) {
+            const randomIndex = Math.floor(Math.random() * featuredCandidates.length)
+            const randomRating = featuredCandidates[randomIndex]
+            const randomTconst = randomRating.tconst
+            console.log('Selected random featured movie:', randomTconst, 'with', randomRating.numVotes, 'votes')
+
+            // Get the movie data for the featured selection
+            const [movieData, movieGenres, movieDetails] = await Promise.all([
+              ApiService.getMovie(randomTconst).catch(() => null),
+              ApiService.getMovieGenres(randomTconst).catch(() => null),
+              ApiService.getMovieDetails(randomTconst).catch(() => null)
+            ])
+
+            if (movieData || movieDetails) {
+              // Determine content type display
+              let contentType = 'Movie'
+              if (movieData?.titleType) {
+                switch (movieData.titleType.toLowerCase()) {
+                  case 'tvseries':
+                    contentType = 'TV Series'
+                    break
+                  case 'tvmovie':
+                    contentType = 'TV Movie'
+                    break
+                  case 'tvspecial':
+                    contentType = 'TV Special'
+                    break
+                  case 'tvepisode':
+                    contentType = 'TV Episode'
+                    break
+                  case 'short':
+                    contentType = 'Short Film'
+                    break
+                  case 'video':
+                    contentType = 'Video'
+                    break
+                  default:
+                    contentType = 'Movie'
+                }
+              }
+
+              // Process genres
               const genresArray = movieGenres?.items || movieGenres || []
               const genresString = genresArray.length > 0 
                 ? genresArray.map(g => g.genre || g).join(', ')
                 : 'Unknown'
 
-              return {
-                id: movie.tconst || movie.id,
-                tconst: movie.tconst,
-                title: movie.primaryTitle || movie.title || `Movie ${index + 1}`,
-                originalTitle: movie.originalTitle,
-                rating: imdbRating?.averageRating || movie.averageRating || '0.0',
-                originalRating: movie.averageRating,
-                imdbRating: imdbRating?.averageRating,
-                imdbVotes: imdbRating?.numVotes,
-                plot: movieDetails?.plot || 'Plot information not available',
+              setFeaturedContent({
+                title: movieData?.primaryTitle || movieData?.title || movieDetails?.title || 'Featured Movie',
+                plot: movieDetails?.plot || 'Plot information not available.',
+                actors: [], // Simplified for now
+                rating: randomRating.averageRating || '0.0',
+                imdbVotes: randomRating.numVotes ? `${randomRating.numVotes.toLocaleString()} votes` : null,
                 genres: genresString,
-                genresArray: genresArray,
-                year: movie.startYear,
-                endYear: movie.endYear,
-                runtime: movie.runtimeMinutes,
-                titleType: movie.titleType,
-                cast: Array.isArray(cast) ? cast : [],
-                isAdult: movie.isAdult
-              }
-            } catch (error) {
-              console.error(`Error enriching movie ${movie.tconst}:`, error)
-              return {
-                id: movie.tconst || movie.id,
-                tconst: movie.tconst,
-                title: movie.primaryTitle || movie.title || `Movie ${index + 1}`,
-                rating: movie.averageRating || '0.0'
-              }
+                year: movieData?.startYear,
+                runtime: movieData?.runtimeMinutes ? `${movieData.runtimeMinutes} min` : null,
+                titleType: movieData?.titleType,
+                contentType: contentType,
+                tconst: randomTconst,
+                poster: movieDetails?.poster || null
+              })
+            } else {
+              throw new Error('Featured movie data not available')
             }
-          })
-        )
-
-        setTopMovies(enrichedMovies)
-
-        // Set featured content with ALL enriched data
-        if (enrichedMovies.length > 0) {
-          const featured = enrichedMovies[0]
-          
-          // Get additional analytics data for featured movie
-          try {
-            const [similarMovies, popularActors] = await Promise.all([
-              ApiService.getSimilarMovies(featured.tconst).catch(() => null),
-              ApiService.getPopularActors(featured.tconst).catch(() => null)
-            ])
-
-            // Process cast with backend person names and TMDB images
-            console.log('Featured movie cast:', featured.cast)
-            const detailedCast = await Promise.all(
-              (featured.cast || [])
-                .filter(person => person.role === 'actor') // Only actors for featured section
-                .slice(0, 4)
-                .map(async person => {
-                  // Get backend person data and TMDB data for this person
-                  let backendPersonData = null
-                  let tmdbData = null
-                  let personImages = []
-                  let tmdbName = null
-                  
-                  if (person.nconst) {
-                    try {
-                      // Get backend person data for the name
-                      backendPersonData = await ApiService.getPersonDetails(person.nconst)
-                      
-                      // Get TMDB data for images only
-                      tmdbData = await ApiService.getPersonFromTMDB(person.nconst)
-                      if (tmdbData && tmdbData.id) {
-                        tmdbName = tmdbData.name
-                        personImages = await ApiService.getPersonImages(tmdbData.id)
-                      }
-                    } catch (error) {
-                      console.error(`Error fetching data for ${person.nconst}:`, error)
-                    }
-                  }
-
-                  return {
-                    name: backendPersonData?.name || person.primaryName || person.name || `Actor ${person.nconst}`,
-                    category: person.category || 'Actor',
-                    characters: person.characters ? person.characters.replace(/[\[\]']/g, '') : '',
-                    nconst: person.nconst,
-                    role: person.role,
-                    images: personImages,
-                    tmdbData: tmdbData,
-                    tmdbName: tmdbName,
-                    backendName: backendPersonData?.name
-                  }
-                })
-            )
-            
+          } else {
+            throw new Error('No high-vote movies found for featured selection')
+          }
+        } catch (error) {
+          console.error('Error fetching random featured movie:', error)
+          // Use fallback
+          if (filteredAndSortedMovies.length > 0) {
+            const fallback = filteredAndSortedMovies[0]
             setFeaturedContent({
-              title: featured.title,
-              plot: featured.plot || 'Plot information from our top-rated collection.',
-              actors: detailedCast.length > 0 ? detailedCast : [{ name: 'Cast information not available', category: '', characters: '' }],
-              rating: featured.rating,
-              imdbVotes: featured.imdbVotes ? `${featured.imdbVotes} votes` : null,
-              genres: featured.genres,
-              genresArray: featured.genresArray,
-              year: featured.year,
-              runtime: featured.runtime ? `${featured.runtime} min` : null,
-              titleType: featured.titleType,
-              isAdult: featured.isAdult,
-              tconst: featured.tconst,
-              similarMovies: similarMovies?.items || similarMovies || [],
-              popularActors: popularActors?.items || popularActors || []
-            })
-          } catch (enrichError) {
-            console.error('Error fetching additional data for featured movie:', enrichError)
-            
-            // Fallback with basic enriched data
-            const detailedCast = featured.cast
-              .slice(0, 4)
-              .map(person => ({
-                name: person.primaryName || person.name || 'Unknown Actor',
-                category: person.category || 'Actor',
-                characters: person.characters || '',
-                nconst: person.nconst
-              }))
-            
-            setFeaturedContent({
-              title: featured.title,
-              plot: featured.plot || 'Featured content from our top-rated collection.',
-              actors: detailedCast.length > 0 ? detailedCast : [{ name: 'Cast information not available', category: '', characters: '' }],
-              rating: featured.rating,
-              genres: featured.genres,
-              year: featured.year,
-              runtime: featured.runtime ? `${featured.runtime} min` : null,
-              titleType: featured.titleType,
-              tconst: featured.tconst
+              title: fallback.title,
+              plot: fallback.plot || 'Featured from top rated collection.',
+              actors: [],
+              rating: fallback.rating,
+              genres: fallback.genres,
+              year: fallback.year,
+              tconst: fallback.tconst,
+              poster: fallback.poster
             })
           }
         }
@@ -214,172 +316,125 @@ export default function Homepage({ onViewChange }) {
   }
 
   return (
-    <div className="container mt-4">
+    <div className="container-fluid mt-4 px-4">
       <div className="row">
-        {/* Top 10 Rated Movies */}
-        <div className="col-md-6">
-          <div className="border p-3 h-100">
-            <h3 className="mb-3">Top 10 rated movies</h3>
-            <div className="border p-2" style={{ height: '300px', overflowY: 'auto' }}>
-              <ul className="list-unstyled mb-0">
-                {topMovies.map((movie) => (
-                  <li 
-                    key={movie.id} 
-                    className="mb-2 d-flex align-items-center"
+        {/* Top 50 Rated Movies List */}
+        <div className="col-12 col-lg-8">
+          <div className="border p-3">
+            <h3 className="mb-3">Top 50 Rated Movies (10k+ votes)</h3>
+            <div style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+              {topMovies.map((movie) => (
+                <div key={movie.id} className="border-bottom pb-2 mb-2">
+                  <div 
+                    className="d-flex align-items-center"
                     style={{ cursor: 'pointer' }}
                     onClick={() => onViewChange('movie-details', { movieId: movie.tconst || movie.id })}
                   >
-                    <span className="me-2">●</span>
-                    <span>
-                      {movie.title} 
-                      {movie.year && <span className="text-muted"> ({movie.year})</span>}
-                      {movie.endYear && movie.endYear !== movie.year && (
-                        <span className="text-muted">-{movie.endYear}</span>
+                    {/* Movie Poster */}
+                    <div className="me-3" style={{ width: '60px', height: '80px', flexShrink: 0 }}>
+                      {movie.poster ? (
+                        <img 
+                          src={movie.poster}
+                          alt={movie.title}
+                          className="img-fluid rounded"
+                          style={{ width: '60px', height: '80px', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <div className="bg-light d-flex align-items-center justify-content-center rounded" style={{ width: '60px', height: '80px' }}>
+                          <i className="bi bi-film text-muted"></i>
+                        </div>
                       )}
-                      {movie.titleType && (
-                        <span className={`badge ms-2 small ${
-                          movie.titleType === 'movie' ? 'bg-success' : 
-                          movie.titleType === 'tvSeries' ? 'bg-primary' : 
-                          movie.titleType === 'tvMiniSeries' ? 'bg-warning text-dark' : 
-                          movie.titleType === 'tvMovie' ? 'bg-info' :
-                          movie.titleType === 'tvSpecial' ? 'bg-secondary' :
-                          movie.titleType === 'tvShort' ? 'bg-light text-dark' :
-                          movie.titleType === 'tvEpisode' ? 'bg-primary' :
-                          movie.titleType === 'short' ? 'bg-light text-dark' :
-                          movie.titleType === 'video' ? 'bg-dark' :
-                          movie.titleType === 'videoGame' ? 'bg-danger' : 'bg-secondary'
-                        }`}>
-                          {movie.titleType === 'tvSeries' ? 'TV Series' : 
-                           movie.titleType === 'tvMiniSeries' ? 'Mini Series' :
-                           movie.titleType === 'tvMovie' ? 'TV Movie' :
-                           movie.titleType === 'tvSpecial' ? 'TV Special' :
-                           movie.titleType === 'tvShort' ? 'TV Short' :
-                           movie.titleType === 'tvEpisode' ? 'TV Episode' :
-                           movie.titleType === 'videoGame' ? 'Video Game' :
-                           movie.titleType === 'movie' ? 'Movie' :
-                           movie.titleType === 'short' ? 'Short' :
-                           movie.titleType === 'video' ? 'Video' :
-                           movie.titleType}
-                        </span>
+                    </div>
+                    
+                    {/* Movie Info */}
+                    <div className="flex-grow-1">
+                      <h6 className="mb-1">{movie.title}</h6>
+                      <div className="text-muted small mb-1">
+                        {movie.year} • ⭐ {movie.rating}
+                        {movie.imdbVotes && (
+                          <span> • {movie.imdbVotes.toLocaleString()} votes</span>
+                        )}
+                      </div>
+                      {movie.genres && (
+                        <div className="text-muted small">
+                          {movie.genres}
+                        </div>
                       )}
-                      {movie.runtime && (
-                        <span className="small text-muted"> • {movie.runtime}min</span>
-                      )}
-                      {movie.isAdult && (
-                        <span className="badge bg-danger ms-1 small">18+</span>
-                      )}
-                      <span className="fw-bold text-primary"> - {movie.rating}</span>
-                      {movie.imdbRating && movie.imdbRating !== movie.originalRating && (
-                        <span className="small text-success"> (IMDB: {movie.imdbRating})</span>
-                      )}
-                      {movie.imdbVotes && (
-                        <span className="small text-muted"> ({movie.imdbVotes} votes)</span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Random Featured Movie/Series */}
-        <div className="col-md-6">
+        {/* Featured Movie */}
+        <div className="col-12 col-lg-4 mb-4">
           <div className="border p-3 h-100">
-            <h3 className="mb-3">Featured Movie/Series</h3>
-            <div className="row">
-              <div className="col-4">
-                <div 
-                  className="bg-light d-flex align-items-center justify-content-center text-muted border"
-                  style={{ height: '200px' }}
-                >
-                  <div className="text-center">
-                    <i className="bi bi-image fs-1"></i>
-                    <div>🖼️</div>
-                  </div>
-                </div>
-                {featuredContent?.year && (
-                  <div className="text-center mt-2 small text-muted">
-                    <strong>Year:</strong> {featuredContent.year}
-                  </div>
-                )}
-              </div>
-              <div className="col-8">
-                {/* Title and basic info */}
-                <div className="mb-3">
-                  <h5 className="mb-2">{featuredContent?.title}</h5>
-                  
-                  {featuredContent?.genres && (
-                    <div className="mb-2">
-                      <strong className="small">Genres: </strong>
-                      <span className="small text-muted">{featuredContent.genres}</span>
-                    </div>
-                  )}
-                  
-                  {featuredContent?.rating && (
-                    <div className="mb-3">
-                      <strong className="small">Rating: </strong>
-                      <span className="small text-primary fw-bold">{featuredContent.rating}</span>
-                    </div>
-                  )}
-
-                  {/* Plot */}
-                  <div className="mb-3">
-                    <h6>Plot</h6>
-                    <p className="small text-muted" style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
-                      {featuredContent?.plot}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Cast */}
-                <div>
-                  <h6>Cast</h6>
-                  <div className="small">
-                    {featuredContent?.actors && featuredContent.actors.length > 0 ? (
-                      featuredContent.actors.map((actor, index) => (
-                        <div key={index} className="d-flex align-items-center mb-2">
-                          {/* Actor Image */}
-                          <div className="me-2" style={{ width: '40px', height: '40px' }}>
-                            {actor.images && actor.images.length > 0 ? (
-                              <img 
-                                src={`https://image.tmdb.org/t/p/w185${actor.images[0].file_path}`}
-                                alt={actor.backendName || actor.name}
-                                className="rounded"
-                                style={{ width: '40px', height: '40px', objectFit: 'cover' }}
-                              />
-                            ) : (
-                              <div 
-                                className="d-flex align-items-center justify-content-center bg-light rounded"
-                                style={{ width: '40px', height: '40px' }}
-                              >
-                                <i className="bi bi-person text-muted small"></i>
-                              </div>
-                            )}
-                          </div>
-                          {/* Actor Info */}
-                          <div>
-                            <div>
-                              <strong>{actor.backendName || actor.name}</strong>
-                              {actor.category && actor.category !== 'Actor' && (
-                                <span className="text-info"> ({actor.category})</span>
-                              )}
-                            </div>
-                            {actor.characters && (
-                              <div className="small text-muted" style={{ fontSize: '0.75rem' }}>
-                                as {actor.characters}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))
+            <h3 className="mb-3">Featured Content</h3>
+            {featuredContent ? (
+              <div 
+                style={{ cursor: 'pointer' }}
+                onClick={() => onViewChange('movie-details', { movieId: featuredContent.tconst })}
+              >
+                <div className="row">
+                  <div className="col-4">
+                    {featuredContent?.poster ? (
+                      <img 
+                        src={featuredContent.poster}
+                        alt={featuredContent.title}
+                        className="img-fluid rounded"
+                        style={{ height: '200px', width: '100%', objectFit: 'cover' }}
+                      />
                     ) : (
-                      <span className="text-muted">Cast information not available</span>
+                      <div className="bg-light d-flex align-items-center justify-content-center text-muted border rounded" style={{ height: '200px' }}>
+                        <div className="text-center">
+                          <i className="bi bi-image fs-1"></i>
+                          <div>🖼️</div>
+                        </div>
+                      </div>
+                    )}
+                    {featuredContent?.year && (
+                      <div className="text-center mt-2 small text-muted">
+                        <strong>Year:</strong> {featuredContent.year}
+                      </div>
                     )}
                   </div>
+                  <div className="col-8">
+                    <h5 className="mb-2">{featuredContent?.title}</h5>
+                    {featuredContent?.contentType && (
+                      <div className="mb-2">
+                        <span className="badge bg-secondary small">{featuredContent.contentType}</span>
+                      </div>
+                    )}
+                    {featuredContent?.genres && (
+                      <div className="mb-2">
+                        <strong className="small">Genres: </strong>
+                        <span className="small text-muted">{featuredContent.genres}</span>
+                      </div>
+                    )}
+                    {featuredContent?.rating && (
+                      <div className="mb-3">
+                        <strong className="small">Rating: </strong>
+                        <span className="small text-primary fw-bold">{featuredContent.rating}</span>
+                      </div>
+                    )}
+                    <div className="mb-3">
+                      <h6>Plot</h6>
+                      <p className="small text-muted" style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                        {featuredContent?.plot}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="text-center py-4">
+                <div className="spinner-border" role="status">
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
