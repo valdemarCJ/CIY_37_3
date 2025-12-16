@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { useAuth } from '../context/AuthContext'
 import ApiService from '../services/ApiService'
 
 export default function LoginModal({ show, onClose, onLogin }) {
+  const { login } = useAuth()
   const [isLogin, setIsLogin] = useState(true)
   const [loginData, setLoginData] = useState({
-    username: '',
-    password: ''
+    username: 'testtestuser',
+    password: 'testtest'
   })
   const [signupData, setSignupData] = useState({
     email: '',
@@ -21,16 +23,27 @@ export default function LoginModal({ show, onClose, onLogin }) {
     setError('')
     
     try {
-      const response = await ApiService.login(loginData.username, loginData.password)
+      const result = await login(loginData.username, loginData.password)
+      
+      if (!result.success) {
+        // Show specific error message
+        setError(result.error || 'Login failed. Please check your credentials.')
+        setLoading(false)
+        return
+      }
+
+      // Update ApiService with new token
+      ApiService.setToken(result.token)
+      
       onLogin(loginData.username)
       onClose()
       
       // Reset form
       setLoginData({ username: '', password: '' })
+      setLoading(false)
     } catch (err) {
       console.error('Login error:', err)
-      setError('Login failed. Please check your credentials.')
-    } finally {
+      setError('An unexpected error occurred. Please try again.')
       setLoading(false)
     }
   }
@@ -43,16 +56,26 @@ export default function LoginModal({ show, onClose, onLogin }) {
     try {
       await ApiService.register(signupData)
       // After successful registration, try to login
-      const response = await ApiService.login(signupData.username, signupData.password)
+      const result = await login(signupData.username, signupData.password)
+      
+      if (!result.success) {
+        setError('Registration successful, but login failed. Please try logging in.')
+        setLoading(false)
+        return
+      }
+
+      // Update ApiService with new token
+      ApiService.setToken(result.token)
+      
       onLogin(signupData.username)
       onClose()
       
       // Reset form
       setSignupData({ email: '', username: '', password: '' })
+      setLoading(false)
     } catch (err) {
       console.error('Signup error:', err)
       setError('Signup failed. Please try again.')
-    } finally {
       setLoading(false)
     }
   }

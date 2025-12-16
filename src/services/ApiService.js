@@ -2,23 +2,49 @@ const API_BASE_URL = 'https://localhost:7098/api'
 
 class ApiService {
   constructor() {
-    this.token = localStorage.getItem('authToken')
+    this.token = sessionStorage.getItem('authToken')
+  }
+
+  // Update token when authentication occurs (called from AuthContext)
+  setToken(token) {
+    this.token = token
+  }
+
+  // Clear token on logout
+  clearToken() {
+    this.token = null
   }
 
   async makeRequest(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`
     
+    // Get fresh token from sessionStorage
+    const currentToken = sessionStorage.getItem('authToken')
+    
     const defaultOptions = {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...(this.token && { Authorization: `Bearer ${this.token}` })
+        ...(currentToken && { Authorization: `Bearer ${currentToken}` })
       },
       ...options
     }
 
     try {
       const response = await fetch(url, defaultOptions)
+      
+      // Handle 401 Unauthorized - token expired or invalid
+      if (response.status === 401) {
+        // Clear auth data
+        sessionStorage.removeItem('authToken')
+        sessionStorage.removeItem('authExpiresAt')
+        this.token = null
+        
+        // Trigger redirect to login (component will handle this)
+        window.dispatchEvent(new Event('auth:logout'))
+        throw new Error('Unauthorized - please login again')
+      }
+      
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status} ${response.statusText}`)
       }
