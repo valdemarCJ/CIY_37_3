@@ -4,9 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Content Security Policy to prevent XSS attacks -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+      img-src 'self' data: https: https://image.tmdb.org;
+      font-src 'self' https://cdn.jsdelivr.net;
+      connect-src 'self' https://localhost:7098 https://api.themoviedb.org;
+      base-uri 'self';
+      form-action 'self'
+    ">
     <title>cit37_3</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <script type="module" crossorigin src="/assets/index-CSGevaRj.js"></script>
+    <script type="module" crossorigin src="/assets/index-BwZTZSPK.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-BL2MO7FZ.css">
   </head>
   <body>

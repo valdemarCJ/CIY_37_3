@@ -10,7 +10,7 @@ import UserProfile from './components/UserProfile'
 import PersonDetails from './components/PersonDetails'
 import LoginModal from './components/LoginModal'
 import TopMoviesSeriesList from './components/TopMoviesSeriesList'
-import AuthDebug from './components/AuthDebug'
+import AuthDebugFooter from './components/AuthDebugFooter'
 
 // Import Auth
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -162,8 +162,6 @@ function AppContent() {
         </div>
       )}
 
-      <AuthDebug />
-      
       <Navigation 
         currentView={currentView}
         onViewChange={handleViewChange}
@@ -179,6 +177,8 @@ function AppContent() {
         onClose={() => setShowLoginModal(false)}
         onLogin={handleLogin}
       />
+      
+      <AuthDebugFooter />
     </div>
   )
 }

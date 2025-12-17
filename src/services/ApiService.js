@@ -244,25 +244,12 @@ class ApiService {
     return this.makeRequest(`/Users/${userId}`)
   }
 
-  // Analytics
-  async getSimilarMovies(tconst) {
-    return this.makeRequest(`/Analytics/similar/${tconst}`)
-  }
-
-  async getPopularActors(tconst) {
-    return this.makeRequest(`/Analytics/popular-actors/${tconst}`)
-  }
-
   // Search functionality
   async searchMovies(query, page = 1, pageSize = 20) {
     return this.makeRequest(`/search?query=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}`)
   }
 
   // People endpoints
-  async getPeople(page = 1, pageSize = 20) {
-    return this.makeRequest(`/people?page=${page}&pageSize=${pageSize}`)
-  }
-
   async getPersonDetails(nconst) {
     return this.makeRequest(`/people/${nconst}`)
   }

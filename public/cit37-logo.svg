@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
+  <!-- Background -->
+  <rect width="400" height="200" fill="white"/>
+  
+  <!-- CIT37 text in red -->
+  <text x="200" y="100" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="#E71E26" text-anchor="middle" dominant-baseline="middle">CIT37</text>
+  
+  <!-- MOVIE DATABASE text in red -->
+  <text x="200" y="160" font-family="Arial, sans-serif" font-size="20" font-weight="normal" fill="#E71E26" text-anchor="middle" dominant-baseline="middle">MOVIE DATABASE</text>
+</svg>

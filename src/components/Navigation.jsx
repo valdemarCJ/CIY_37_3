@@ -17,9 +17,13 @@ export default function Navigation({ currentView, onViewChange, onShowLoginModal
         <button 
           className="navbar-brand btn btn-link text-decoration-none p-0"
           onClick={() => onViewChange('home')}
-          style={{ border: 'none', background: 'none', fontSize: '1.25rem', fontWeight: 'bold' }}
+          style={{ border: 'none', background: 'none' }}
         >
-          Logo
+          <img 
+            src="/cit37-logo.svg" 
+            alt="CIT37 Movie Database" 
+            style={{ height: '80px', width: 'auto' }}
+          />
         </button>
 
         {/* Search Bar */}
