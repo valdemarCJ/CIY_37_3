@@ -8,11 +8,10 @@
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
       script-src 'self';
-      style-src 'self' 'unsafe-inline';
-      img-src 'self' data: https:;
-      font-src 'self';
-      connect-src 'self' https://localhost:7098;
-      frame-ancestors 'none';
+      style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+      img-src 'self' data: https: https://image.tmdb.org;
+      font-src 'self' https://cdn.jsdelivr.net;
+      connect-src 'self' https://localhost:7098 https://api.themoviedb.org;
       base-uri 'self';
       form-action 'self'
     ">

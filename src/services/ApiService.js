@@ -99,10 +99,6 @@ class ApiService {
     return this.makeRequest(`/Movies/${tconst}`)
   }
 
-  async searchMovies(query, page = 1, pageSize = 20) {
-    return this.makeRequest(`/Search?query=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}`)
-  }
-
   async getMovieDetails(tconst) {
     return this.makeRequest(`/movie-details/${tconst}`)
   }
@@ -135,6 +131,10 @@ class ApiService {
   // Ratings
   async getImdbRating(tconst) {
     return this.makeRequest(`/imdb-ratings/${tconst}`)
+  }
+
+  async getImdbRatings(page = 1, pageSize = 20) {
+    return this.makeRequest(`/imdb-ratings?page=${page}&pageSize=${pageSize}`)
   }
 
   async rateMovie(tconst, value) {
@@ -285,6 +285,10 @@ class ApiService {
   // Watch history
   async getWatchHistory(userId, page = 1, pageSize = 20) {
     return this.makeRequest(`/Users/${userId}/history/watch?page=${page}&pageSize=${pageSize}`)
+  }
+
+  async getUserSearchHistory(userId, page = 1, pageSize = 20) {
+    return this.makeRequest(`/Users/${userId}/history/search?page=${page}&pageSize=${pageSize}`)
   }
 
   async addToWatchHistory(userId, tconst) {

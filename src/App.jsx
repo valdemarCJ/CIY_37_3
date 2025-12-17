@@ -141,13 +141,13 @@ function AppContent() {
       case 'movie-details':
         return <MovieDetails movieId={viewData.movieId} onViewChange={handleViewChange} />
       case 'profile':
-        return <UserProfile user={user} onViewChange={handleViewChange} />
+        return <UserProfile onViewChange={handleViewChange} />
       case 'person':
         return <PersonDetails personId={viewData.personId} onViewChange={handleViewChange} />
       case 'top-movies':
-        return <TopMoviesSeriesList isMovies={true} onViewChange={handleViewChange} />
+        return <TopMoviesSeriesList type="movies" onViewChange={handleViewChange} />
       case 'top-series':
-        return <TopMoviesSeriesList isMovies={false} onViewChange={handleViewChange} />
+        return <TopMoviesSeriesList type="series" onViewChange={handleViewChange} />
       default:
         return <Homepage onViewChange={handleViewChange} />
     }

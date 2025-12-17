@@ -50,7 +50,7 @@ export default function Navigation({ currentView, onViewChange, onShowLoginModal
           </button>
           <button 
             className="btn btn-link text-decoration-none text-dark"
-            onClick={() => onViewChange('user-profile')}
+            onClick={() => onViewChange('profile')}
           >
             User page
           </button>

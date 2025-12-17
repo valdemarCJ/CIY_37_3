@@ -64,36 +64,38 @@ export default function PersonDetails({ personId, onViewChange }) {
           console.log('Person movies received:', personMoviesResponse)
           
           if (personMoviesResponse && personMoviesResponse.length > 0) {
-            // Get details for each movie
-            backendMovies = await Promise.all(
-              personMoviesResponse.slice(0, 6).map(async (tconst) => {
-                try {
-                  const [movieData, imdbRating] = await Promise.all([
-                    ApiService.getMovie(tconst).catch(() => null),
-                    ApiService.getImdbRating(tconst).catch(() => null)
-                  ])
-                  
+            // Get details for each movie and filter out those that can't be found
+            const moviePromises = personMoviesResponse.slice(0, 6).map(async (tconst) => {
+              try {
+                const [movieData, imdbRating, movieDetails] = await Promise.all([
+                  ApiService.getMovie(tconst).catch(() => null),
+                  ApiService.getImdbRating(tconst).catch(() => null),
+                  ApiService.getMovieDetails(tconst).catch(() => null)
+                ])
+                
+                // Only return movie if we have some data for it
+                if (movieData || movieDetails || imdbRating) {
                   return {
                     id: tconst,
                     tconst: tconst,
-                    title: movieData?.primaryTitle || movieData?.title || 'Unknown Title',
-                    year: movieData?.startYear || 'Unknown',
-                    rating: imdbRating?.averageRating || movieData?.averageRating || 'N/A',
-                    poster: movieData?.poster || null
+                    title: movieData?.primaryTitle || movieData?.title || movieDetails?.title || `Movie ${tconst}`,
+                    year: movieData?.startYear || movieDetails?.startYear || 'Unknown',
+                    rating: imdbRating?.averageRating || movieData?.averageRating || movieDetails?.averageRating || 'N/A',
+                    poster: movieDetails?.poster || movieData?.poster || null
                   }
-                } catch (error) {
-                  console.error(`Error fetching movie details for ${tconst}:`, error)
-                  return {
-                    id: tconst,
-                    tconst: tconst,
-                    title: 'Unknown Title',
-                    year: 'Unknown',
-                    rating: 'N/A',
-                    poster: null
-                  }
+                } else {
+                  console.log(`No data found for movie ${tconst} - skipping`)
+                  return null // Return null for movies that can't be found
                 }
-              })
-            )
+              } catch (error) {
+                console.error(`Error fetching movie details for ${tconst}:`, error)
+                return null // Return null for movies with errors
+              }
+            })
+            
+            // Wait for all promises and filter out null values
+            const movieResults = await Promise.all(moviePromises)
+            backendMovies = movieResults.filter(movie => movie !== null)
           }
         } catch (error) {
           console.error('Error fetching person movies:', error)
@@ -266,19 +268,7 @@ export default function PersonDetails({ personId, onViewChange }) {
           </div>
 
           <div className="row mb-4">
-            <div className="col-md-6">
-              <div className="border p-3">
-                <h5>Primary Professions</h5>
-                <div>
-                  {person.professions.map((profession, index) => (
-                    <span key={index} className="badge bg-primary me-1 mb-1">
-                      {profession}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="col-md-6">
+            <div className="col-md-12">
               <div className="border p-3">
                 <h5>Known For</h5>
                 <div className="small">
