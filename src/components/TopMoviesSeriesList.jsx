@@ -15,13 +15,41 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
       setError(null)
 
       try {
-        // Use new type-specific endpoints for faster loading
-        const response = isMovies ? 
-          await ApiService.getMoviesOnly(1, 7) : 
-          await ApiService.getSeriesOnly(1, 7)
+        // Get more items initially to allow for vote filtering
+        const initialResponse = isMovies ? 
+          await ApiService.getMoviesOnly(1, 200) : 
+          await ApiService.getSeriesOnly(1, 200)
           
-        const filteredItems = response.items || response || []
-        console.log(`${isMovies ? 'Movies' : 'Series'} received:`, filteredItems.length)
+        const initialItems = initialResponse.items || initialResponse || []
+        console.log(`${isMovies ? 'Movies' : 'Series'} received:`, initialItems.length)
+
+        // Get IMDB ratings for filtering by vote count
+        const itemsWithRatings = await Promise.all(
+          initialItems.map(async (item) => {
+            try {
+              const imdbRating = await ApiService.getImdbRating(item.tconst)
+              return {
+                ...item,
+                imdbRating: imdbRating?.averageRating || item.averageRating || '0.0',
+                imdbVotes: imdbRating?.numVotes || 0
+              }
+            } catch (error) {
+              return {
+                ...item,
+                imdbRating: item.averageRating || '0.0',
+                imdbVotes: 0
+              }
+            }
+          })
+        )
+
+        // Filter by minimum 2000 votes and sort by rating, take top 50
+        const filteredItems = itemsWithRatings
+          .filter(item => (item.imdbVotes || 0) >= 2000)
+          .sort((a, b) => parseFloat(b.imdbRating || 0) - parseFloat(a.imdbRating || 0))
+          .slice(0, 50)
+          
+        console.log(`Filtered to ${filteredItems.length} items with 2000+ votes`)
 
         // Transform data WITHOUT cast and detailed info first (for faster loading)
         const transformedItems = filteredItems.map((item, index) => ({
@@ -29,13 +57,11 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
           tconst: item.tconst,
           title: item.primaryTitle || item.title || `${isMovies ? 'Movie' : 'Series'} ${index + 1}`,
           originalTitle: item.originalTitle,
-          rating: item.averageRating || '0.0',
-          imdbRating: null, // Will be updated after IMDB rating loads
-          imdbVotes: null,
+          rating: item.imdbRating || item.averageRating || '0.0',
+          imdbRating: item.imdbRating,
+          imdbVotes: item.imdbVotes,
           actors: ['Loading cast...'], // Will be updated after cast loads
           genre: item.genres ? item.genres.split(',')[0] : (isMovies ? 'Action' : 'Drama'),
-          seasons: !isMovies ? (item.seasons || 'Unknown') : null,
-          episodes: !isMovies ? (item.episodes || 'Unknown') : null,
           runtime: item.runtimeMinutes || 'Unknown',
           type: item.titleType === 'tvSeries' ? 'TV Series' : 
                 item.titleType === 'tvMiniSeries' ? 'Mini Series' : 
@@ -58,13 +84,12 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
         // Set items first for immediate display
         setItems(transformedItems)
 
-        // Then load detailed data asynchronously (poster, rating, cast)
+        // Then load detailed data asynchronously (poster, cast, and season/episode info)
         transformedItems.forEach(async (item, index) => {
           try {
-            // Fetch poster, rating and cast in parallel
-            const [movieDetails, imdbRating, castData] = await Promise.all([
+            // Fetch poster and cast in parallel (rating already loaded)
+            const [movieDetails, castData] = await Promise.all([
               ApiService.getMovieDetails(item.tconst).catch(() => null),
-              ApiService.getImdbRating(item.tconst).catch(() => null),
               ApiService.getMoviePeople(item.tconst).catch(() => null)
             ])
             
@@ -83,17 +108,14 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
                         })
               ) : []
             
-            // Update this item with poster, rating and cast
+            // Update this item with poster and cast (rating already set)
             setItems(prevItems => 
               prevItems.map((prevItem, prevIndex) => 
                 prevIndex === index ? 
                   { 
                     ...prevItem, 
                     actors: cast.length > 0 ? cast : ['Cast information unavailable'],
-                    poster: movieDetails?.poster || null,
-                    imdbRating: imdbRating?.averageRating || prevItem.rating,
-                    imdbVotes: imdbRating?.numVotes || null,
-                    rating: imdbRating?.averageRating || prevItem.rating
+                    poster: movieDetails?.poster || null
                   } : 
                   prevItem
               )
@@ -114,14 +136,12 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
         setError('Failed to load data')
         
         // Fallback mock data
-        const mockItems = Array.from({ length: 7 }, (_, i) => ({
+        const mockItems = Array.from({ length: 50 }, (_, i) => ({
           id: i + 1,
           title: `${isMovies ? 'Movie' : 'Series'} ${i + 1}`,
           rating: (9.5 - i * 0.2).toFixed(1),
           actors: ['Unable to load'],
           genre: isMovies ? 'Action' : 'Drama',
-          seasons: isMovies ? null : Math.floor(Math.random() * 5) + 1,
-          episodes: isMovies ? null : Math.floor(Math.random() * 20) + 10,
           runtime: isMovies ? Math.floor(Math.random() * 60) + 90 : null,
           type: isMovies ? 'Movie' : 'Series'
         }))
@@ -219,12 +239,9 @@ export default function TopMoviesSeriesList({ type, onViewChange }) {
               </div>
               <div className="col-md-2">
                 <div>
-                  <strong>Number of {isMovies ? 'Runtime' : 'Seasons and episodes'}</strong>
+                  <strong>Episode Runtime</strong>
                   <div>
-                    {isMovies 
-                      ? `${item.runtime} min`
-                      : `${item.seasons} seasons, ${item.episodes} episodes`
-                    }
+                    {item.runtime ? `${item.runtime} min` : 'N/A'}
                   </div>
                 </div>
               </div>

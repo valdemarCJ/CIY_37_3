@@ -225,13 +225,6 @@ export default function UserProfile({ onViewChange, user }) {
     fetchUserProfile()
   }, [userId, token])
 
-  const handleDeleteAccount = () => {
-    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-      alert('Account deletion requested. You will be logged out.')
-      // Here you would typically call your API to delete the account
-    }
-  }
-
   if (loading) {
     return (
       <div className="container mt-4">
@@ -412,18 +405,6 @@ export default function UserProfile({ onViewChange, user }) {
               )}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Delete Account Button */}
-      <div className="row mt-4">
-        <div className="col-12">
-          <button 
-            className="btn btn-dark"
-            onClick={handleDeleteAccount}
-          >
-            Delete account
-          </button>
         </div>
       </div>
     </div>

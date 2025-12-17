@@ -321,7 +321,7 @@ export default function Homepage({ onViewChange }) {
         {/* Top 50 Rated Movies List */}
         <div className="col-12 col-lg-8">
           <div className="border p-3">
-            <h3 className="mb-3">Top 50 Rated Movies (10k+ votes)</h3>
+            <h3 className="mb-3">Top 50 Rated Movies and Series (10k+ votes)</h3>
             <div style={{ maxHeight: '80vh', overflowY: 'auto' }}>
               {topMovies.map((movie) => (
                 <div key={movie.id} className="border-bottom pb-2 mb-2">
