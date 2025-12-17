@@ -1,5 +1,19 @@
 const API_BASE_URL = 'https://localhost:7098/api'
 
+// Helper function to decode JWT and extract user ID
+function getUserIdFromToken(token) {
+  if (!token) return null
+  
+  try {
+    const payload = token.split('.')[1]
+    const decoded = JSON.parse(atob(payload))
+    return decoded.sub // User ID is in "sub" claim
+  } catch (error) {
+    console.error('Could not decode JWT:', error)
+    return null
+  }
+}
+
 class ApiService {
   constructor() {
     this.token = sessionStorage.getItem('authToken')
@@ -48,6 +62,12 @@ class ApiService {
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status} ${response.statusText}`)
       }
+      
+      // Handle 204 No Content - no body to parse
+      if (response.status === 204) {
+        return null
+      }
+      
       return await response.json()
     } catch (error) {
       console.error(`API Error for ${endpoint}:`, error)
@@ -118,7 +138,17 @@ class ApiService {
   }
 
   async rateMovie(tconst, value) {
-    return this.makeRequest(`/Ratings?tconst=${tconst}&value=${value}`, {
+    // Backend uses JWT token from header to identify user
+    // Returns 204 No Content on success
+    return this.makeRequest(`/ratings?tconst=${tconst}&value=${value}`, {
+      method: 'POST'
+    })
+  }
+
+  async ratePerson(nconst, value) {
+    // Backend uses JWT token from header to identify user
+    // Returns 204 No Content on success
+    return this.makeRequest(`/person-ratings?nconst=${nconst}&value=${value}`, {
       method: 'POST'
     })
   }
@@ -159,6 +189,51 @@ class ApiService {
     return this.makeRequest(`/users/${userId}/Bookmarks/${tconst}`, {
       method: 'DELETE'
     })
+  }
+
+  // Get current authenticated user's rating history using JWT token
+  async getMyRatingHistory(page = 1, pageSize = 100) {
+    try {
+      // Get current token from sessionStorage
+      const token = sessionStorage.getItem('authToken')
+      if (!token) {
+        console.warn('No auth token available')
+        return { items: [] }
+      }
+      
+      // Extract user ID from JWT token
+      const userId = getUserIdFromToken(token)
+      if (!userId) {
+        console.warn('Could not extract user ID from token')
+        return { items: [] }
+      }
+      
+      // Debug: log the full URL and request (using PascalCase for C# API)
+      const url = `${API_BASE_URL}/users/${userId}/history/ratings?Page=${page}&PageSize=${pageSize}`
+      console.log('Fetching rating history from:', url)
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      // Debug: log response status
+      console.log('Rating history response status:', response.status)
+      
+      if (!response.ok) {
+        const errorData = await response.text()
+        console.error('Rating history error response:', response.status, errorData)
+        return { items: [] }
+      }
+      
+      return await response.json()
+    } catch (error) {
+      console.warn('Could not fetch rating history:', error)
+      return { items: [] }
+    }
   }
 
   async getUserRatingHistory(userId, page = 1, pageSize = 20) {

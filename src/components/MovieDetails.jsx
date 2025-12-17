@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
 import ApiService from '../services/ApiService'
 
 export default function MovieDetails({ movieId, onViewChange }) {
+  const { isAuthenticated } = useAuth()
   const [movie, setMovie] = useState(null)
   const [cast, setCast] = useState([])
   const [userRating, setUserRating] = useState('')
+  const [existingRating, setExistingRating] = useState(null) // Track if user already rated
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [userId, setUserId] = useState(null) // Get user ID from token
 
   useEffect(() => {
     const fetchMovieDetails = async () => {
@@ -17,6 +21,20 @@ export default function MovieDetails({ movieId, onViewChange }) {
       setError(null)
 
       try {
+        // Extract user ID from token if authenticated
+        if (isAuthenticated) {
+          const token = sessionStorage.getItem('authToken')
+          if (token) {
+            try {
+              const payload = token.split('.')[1]
+              const decoded = JSON.parse(atob(payload))
+              setUserId(decoded.sub)
+            } catch (err) {
+              console.warn('Could not extract user ID from token:', err)
+            }
+          }
+        }
+
         // Fetch comprehensive movie data in parallel
         const [movieData, castData, imdbRating, genres, similarMovies] = await Promise.all([
           ApiService.getMovie(movieId).catch(() => null),
@@ -25,6 +43,34 @@ export default function MovieDetails({ movieId, onViewChange }) {
           ApiService.getMovieGenres(movieId).catch(() => null),
           ApiService.getSimilarMovies(movieId).catch(() => null)
         ])
+
+        // Check if user already rated this movie (if authenticated)
+        if (isAuthenticated) {
+          try {
+            // Get current authenticated user's rating history using JWT token
+            const userRatingsResponse = await ApiService.getMyRatingHistory(1, 100)
+            console.log('Rating history response:', userRatingsResponse)
+            if (userRatingsResponse && userRatingsResponse.items) {
+              // Find rating for this specific movie
+              const movieTconst = movieId
+              console.log('Looking for movie:', movieTconst)
+              console.log('Available ratings:', userRatingsResponse.items.map(r => ({ tconst: r.tconst, value: r.value })))
+              const existingRate = userRatingsResponse.items.find(r => {
+                // Check both with and without "tt" prefix
+                return r.tconst === movieTconst || r.tconst === `tt${movieTconst}`
+              })
+              console.log('Found existing rate:', existingRate)
+              if (existingRate) {
+                console.log('Found existing rating:', existingRate.value)
+                setExistingRating(existingRate.value) // Use 'value' not 'rating'
+              } else {
+                console.log('No existing rating found for this movie')
+              }
+            }
+          } catch (err) {
+            console.warn('Could not fetch user rating history:', err)
+          }
+        }
 
         // Get additional movie details
         let movieDetails = null
@@ -108,22 +154,99 @@ export default function MovieDetails({ movieId, onViewChange }) {
     fetchMovieDetails()
   }, [movieId])
 
-  const handleRatingSubmit = async () => {
-    if (userRating && movie) {
+  // Fetch bookmarks when userId becomes available
+  useEffect(() => {
+    if (!isAuthenticated || !userId || !movieId) return
+
+    const fetchBookmarkStatus = async () => {
       try {
-        await ApiService.rateMovie(movie.tconst || movie.id, parseInt(userRating))
-        alert(`Rating ${userRating} submitted!`)
-        setUserRating('')
-      } catch (error) {
-        console.error('Error submitting rating:', error)
-        alert('Failed to submit rating. Please try again.')
+        const bookmarksResponse = await ApiService.getUserBookmarks(userId, 1, 100)
+        console.log('Bookmarks response:', bookmarksResponse)
+        if (bookmarksResponse && bookmarksResponse.items) {
+          const movieTconst = movieId
+          const existingBookmark = bookmarksResponse.items.find(b => {
+            return b.tconst === movieTconst || b.tconst === `tt${movieTconst}`
+          })
+          if (existingBookmark) {
+            console.log('Found existing bookmark for this movie')
+            setIsBookmarked(true)
+          } else {
+            setIsBookmarked(false)
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching bookmarks:', err)
       }
+    }
+
+    fetchBookmarkStatus()
+  }, [userId, movieId, isAuthenticated])
+
+  const handleRatingSubmit = async () => {
+    if (!isAuthenticated) {
+      alert('Please log in to rate movies')
+      return
+    }
+
+    // Don't allow rating change if user already rated
+    if (existingRating !== null) {
+      alert('You have already rated this movie')
+      return
+    }
+
+    if (!userRating || !movie) {
+      alert('Please select a rating')
+      return
+    }
+
+    try {
+      // Backend uses JWT token to identify user (from Authorization header)
+      await ApiService.rateMovie(movie.tconst || movie.id, parseInt(userRating))
+      
+      // Success - update UI
+      const ratingValue = parseInt(userRating)
+      setExistingRating(ratingValue) // Set as rated
+      setUserRating('') // Clear input
+      
+      alert(`Rating ${ratingValue} submitted!`)
+    } catch (error) {
+      console.error('Error submitting rating:', error)
+      alert('Failed to submit rating. You may have already rated this movie.')
     }
   }
 
-  const toggleBookmark = () => {
-    setIsBookmarked(!isBookmarked)
-    // Here you would typically update the bookmark status in your API
+  const toggleBookmark = async () => {
+    if (!isAuthenticated) {
+      alert('Please log in to bookmark movies')
+      return
+    }
+
+    if (!userId) {
+      alert('Unable to bookmark: User ID not found. Please log in again.')
+      return
+    }
+
+    try {
+      const tconst = movie.tconst || movie.id
+      console.log('Toggling bookmark for userId:', userId, 'tconst:', tconst, 'isBookmarked:', isBookmarked)
+      
+      if (isBookmarked) {
+        // Remove bookmark
+        console.log('Removing bookmark...')
+        await ApiService.removeBookmark(userId, tconst)
+        setIsBookmarked(false)
+        alert('Bookmark removed')
+      } else {
+        // Add bookmark
+        console.log('Adding bookmark...')
+        await ApiService.addBookmark(userId, tconst, '')
+        setIsBookmarked(true)
+        alert('Movie bookmarked!')
+      }
+    } catch (error) {
+      console.error('Error toggling bookmark:', error)
+      alert(`Failed to update bookmark: ${error.message}`)
+    }
   }
 
   if (loading) {
@@ -162,8 +285,10 @@ export default function MovieDetails({ movieId, onViewChange }) {
               <button 
                 className={`btn ${isBookmarked ? 'btn-success' : 'btn-outline-secondary'} mb-2`}
                 onClick={toggleBookmark}
+                disabled={!isAuthenticated}
+                title={isAuthenticated ? '' : 'Please log in to bookmark'}
               >
-                {isBookmarked ? 'Bookmarked' : 'Bookmark'}
+                {isBookmarked ? '❤️ Bookmarked' : '🤍 Bookmark'}
               </button>
             </div>
             <div className="flex-grow-1">
@@ -308,32 +433,57 @@ export default function MovieDetails({ movieId, onViewChange }) {
 
         {/* Rating Section */}
         <div className="col-md-4">
-          <div className="text-end mb-3">
-            <button className="btn btn-dark">Rate</button>
+          <div className="mb-3">
+            {isAuthenticated ? (
+              existingRating !== null ? (
+                <div className="alert alert-success small">
+                  ✓ You rated: <strong>{existingRating}</strong>
+                </div>
+              ) : (
+                <div className="alert alert-info small">
+                  ✓ Logged in - You can rate and bookmark
+                </div>
+              )
+            ) : (
+              <div className="alert alert-warning small">
+                ⚠ Please log in to rate and bookmark
+              </div>
+            )}
           </div>
           
           <div className="text-center">
             <h3>Rating:</h3>
             <div className="display-4 mb-3">{movie.rating}</div>
             
-            <div className="border p-3">
-              <input 
-                type="number" 
-                className="form-control mb-2"
-                placeholder="Your rating (1-10)"
-                min="1" 
-                max="10" 
-                step="0.1"
-                value={userRating}
-                onChange={(e) => setUserRating(e.target.value)}
-              />
-              <button 
-                className="btn btn-primary w-100"
-                onClick={handleRatingSubmit}
-              >
-                Submit Rating
-              </button>
-            </div>
+            {existingRating !== null ? (
+              <div className="border p-3 bg-light">
+                <p className="text-muted mb-0">You have already rated this movie</p>
+                <p className="h5 mt-2">Your rating: <strong>{existingRating}</strong></p>
+              </div>
+            ) : (
+              <div className="border p-3">
+                <label htmlFor="ratingInput" className="form-label mb-2">Your Rating (1-10)</label>
+                <input 
+                  id="ratingInput"
+                  type="number" 
+                  className="form-control mb-2"
+                  placeholder="Enter your rating"
+                  min="1" 
+                  max="10" 
+                  step="0.1"
+                  value={userRating}
+                  onChange={(e) => setUserRating(e.target.value)}
+                  disabled={!isAuthenticated}
+                />
+                <button 
+                  className="btn btn-primary w-100"
+                  onClick={handleRatingSubmit}
+                  disabled={!isAuthenticated}
+                >
+                  {isAuthenticated ? 'Submit Rating' : 'Login to Rate'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
 import ApiService from '../services/ApiService'
 
 export default function PersonDetails({ personId, onViewChange }) {
+  const { isAuthenticated } = useAuth()
   const [person, setPerson] = useState(null)
   const [userRating, setUserRating] = useState('')
+  const [existingRating, setExistingRating] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -126,10 +129,33 @@ export default function PersonDetails({ personId, onViewChange }) {
     fetchPersonDetails()
   }, [personId])
 
-  const handleRatingSubmit = () => {
-    if (userRating) {
-      alert(`Rating ${userRating} submitted for ${person.name}!`)
-      // Here you would typically send the rating to your API
+  const handleRatingSubmit = async () => {
+    if (!isAuthenticated) {
+      alert('Please log in to rate people')
+      return
+    }
+
+    if (existingRating !== null) {
+      alert('You have already rated this person')
+      return
+    }
+
+    if (!userRating || !person) {
+      alert('Please select a rating')
+      return
+    }
+
+    try {
+      const ratingValue = parseInt(userRating)
+      await ApiService.ratePerson(person.nconst, ratingValue)
+      
+      // Success - update UI
+      setExistingRating(ratingValue)
+      setUserRating('')
+      alert(`Rating ${ratingValue} submitted!`)
+    } catch (error) {
+      console.error('Error submitting rating:', error)
+      alert('Failed to submit rating. You may have already rated this person.')
     }
   }
 
@@ -197,25 +223,44 @@ export default function PersonDetails({ personId, onViewChange }) {
           {/* Rating Section */}
           <div className="row mb-4">
             <div className="col-md-6">
-              <div className="border p-3 text-center bg-light">
-                <h6>Rating</h6>
-                <div className="fs-4 text-primary fw-bold">{person.rating || '0.0'}</div>
-                <div className="mt-2">
-                  <button className="btn btn-outline-primary btn-sm me-2" onClick={handleRatingSubmit}>
-                    Rate Person
-                  </button>
-                  <input
-                    type="number"
-                    className="form-control form-control-sm d-inline-block"
-                    style={{ width: '80px' }}
-                    placeholder="0-10"
-                    min="0"
-                    max="10"
-                    step="0.1"
-                    value={userRating}
-                    onChange={(e) => setUserRating(e.target.value)}
-                  />
-                </div>
+              <div className="border p-3">
+                <h5>Rating</h5>
+                <div className="fs-4 text-primary fw-bold mb-3">{person.rating || '0.0'}</div>
+                
+                {isAuthenticated ? (
+                  existingRating !== null ? (
+                    <div className="alert alert-success small mb-0">
+                      ✓ You rated: <strong>{existingRating}</strong>
+                    </div>
+                  ) : (
+                    <div>
+                      <label htmlFor="personRatingInput" className="form-label mb-2">Your Rating (1-10)</label>
+                      <div className="d-flex gap-2">
+                        <input
+                          id="personRatingInput"
+                          type="number"
+                          className="form-control form-control-sm"
+                          placeholder="0-10"
+                          min="1"
+                          max="10"
+                          step="0.1"
+                          value={userRating}
+                          onChange={(e) => setUserRating(e.target.value)}
+                        />
+                        <button 
+                          className="btn btn-primary btn-sm"
+                          onClick={handleRatingSubmit}
+                        >
+                          Submit
+                        </button>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="alert alert-warning small mb-0">
+                    ⚠ Please log in to rate
+                  </div>
+                )}
               </div>
             </div>
           </div>

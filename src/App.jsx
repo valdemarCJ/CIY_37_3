@@ -24,6 +24,23 @@ function AppContent() {
 
   const { isTokenExpired, logout, isAuthenticated } = useAuth()
 
+  // Initialize username from token on mount
+  useEffect(() => {
+    const token = sessionStorage.getItem('authToken')
+    if (token) {
+      try {
+        const payload = token.split('.')[1]
+        const decoded = JSON.parse(atob(payload))
+        const userIdFromToken = decoded.sub
+        if (userIdFromToken) {
+          setUsername(userIdFromToken)
+        }
+      } catch (e) {
+        console.error('Failed to decode token:', e)
+      }
+    }
+  }, [])
+
   // Check if token expired and redirect to login
   useEffect(() => {
     if (isTokenExpired && username) {

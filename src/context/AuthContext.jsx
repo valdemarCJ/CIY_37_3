@@ -77,6 +77,11 @@ export function AuthProvider({ children }) {
       // Store token and expiration in sessionStorage (survives refresh, not persistent)
       sessionStorage.setItem('authToken', data.token)
       sessionStorage.setItem('authExpiresAt', data.expiresAt)
+      
+      // Store userId if backend returns it
+      if (data.userId) {
+        localStorage.setItem('userId', data.userId)
+      }
 
       setToken(data.token)
       setExpiresAt(data.expiresAt)
@@ -94,6 +99,7 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     sessionStorage.removeItem('authToken')
     sessionStorage.removeItem('authExpiresAt')
+    localStorage.removeItem('userId')
     setToken(null)
     setExpiresAt(null)
     setIsTokenExpired(false)
