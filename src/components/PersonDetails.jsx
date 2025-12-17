@@ -7,8 +7,10 @@ export default function PersonDetails({ personId, onViewChange }) {
   const [person, setPerson] = useState(null)
   const [userRating, setUserRating] = useState('')
   const [existingRating, setExistingRating] = useState(null)
+  const [isBookmarked, setIsBookmarked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [userId, setUserId] = useState(null) // Get user ID from token
 
   useEffect(() => {
     const fetchPersonDetails = async () => {
@@ -19,6 +21,40 @@ export default function PersonDetails({ personId, onViewChange }) {
 
       try {
         console.log('Fetching person data for:', personId)
+        
+        // Extract user ID from token if authenticated
+        if (isAuthenticated) {
+          const token = sessionStorage.getItem('authToken')
+          if (token) {
+            try {
+              const payload = token.split('.')[1]
+              const decoded = JSON.parse(atob(payload))
+              setUserId(decoded.sub)
+            } catch (err) {
+              console.warn('Could not extract user ID from token:', err)
+            }
+          }
+        }
+        
+        // Check if user already rated this person (if authenticated)
+        if (isAuthenticated) {
+          try {
+            // Get current authenticated user's person rating history
+            const userPersonRatingsResponse = await ApiService.getMyPersonRatingHistory(1, 100)
+            console.log('Person rating history response:', userPersonRatingsResponse)
+            if (userPersonRatingsResponse && userPersonRatingsResponse.items) {
+              const personNconst = personId
+              const existingRate = userPersonRatingsResponse.items.find(r => {
+                return r.nconst === personNconst || r.nconst === `nm${personNconst}`
+              })
+              if (existingRate) {
+                setExistingRating(existingRate.value)
+              }
+            }
+          } catch (err) {
+            console.warn('Could not fetch user person rating history:', err)
+          }
+        }
         
         // Fetch both backend person data and TMDB data in parallel
         const [personData, tmdbPersonData] = await Promise.all([
@@ -131,6 +167,33 @@ export default function PersonDetails({ personId, onViewChange }) {
     fetchPersonDetails()
   }, [personId])
 
+  // Check bookmark status separately
+  useEffect(() => {
+    const fetchBookmarkStatus = async () => {
+      if (!userId || !personId || !isAuthenticated) {
+        setIsBookmarked(false)
+        return
+      }
+
+      try {
+        const bookmarks = await ApiService.getUserPersonBookmarks(userId, 1, 100)
+        if (bookmarks && bookmarks.items) {
+          const isCurrentlyBookmarked = bookmarks.items.some(bookmark => 
+            bookmark.nconst === personId || bookmark.nconst === `nm${personId}`
+          )
+          setIsBookmarked(isCurrentlyBookmarked)
+        } else {
+          setIsBookmarked(false)
+        }
+      } catch (err) {
+        console.error('Error fetching person bookmarks:', err)
+        setIsBookmarked(false)
+      }
+    }
+
+    fetchBookmarkStatus()
+  }, [userId, personId, isAuthenticated])
+
   const handleRatingSubmit = async () => {
     if (!isAuthenticated) {
       alert('Please log in to rate people')
@@ -158,6 +221,33 @@ export default function PersonDetails({ personId, onViewChange }) {
     } catch (error) {
       console.error('Error submitting rating:', error)
       alert('Failed to submit rating. You may have already rated this person.')
+    }
+  }
+
+  const togglePersonBookmark = async () => {
+    if (!isAuthenticated) {
+      alert('Please log in to bookmark people')
+      return
+    }
+
+    if (!userId) {
+      alert('User not found')
+      return
+    }
+
+    try {
+      if (isBookmarked) {
+        await ApiService.removePersonBookmark(userId, personId)
+        setIsBookmarked(false)
+        alert('Person removed from bookmarks')
+      } else {
+        await ApiService.addPersonBookmark(userId, personId, '')
+        setIsBookmarked(true)
+        alert('Person added to bookmarks')
+      }
+    } catch (error) {
+      console.error('Error toggling person bookmark:', error)
+      alert('Failed to update bookmark')
     }
   }
 
@@ -261,6 +351,24 @@ export default function PersonDetails({ personId, onViewChange }) {
                 ) : (
                   <div className="alert alert-warning small mb-0">
                     ⚠ Please log in to rate
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="col-md-6">
+              <div className="border p-3">
+                <h5>Actions</h5>
+                {isAuthenticated ? (
+                  <button 
+                    className={`btn w-100 ${isBookmarked ? 'btn-warning' : 'btn-outline-warning'}`}
+                    onClick={togglePersonBookmark}
+                  >
+                    <i className={`bi ${isBookmarked ? 'bi-bookmark-fill' : 'bi-bookmark'} me-2`}></i>
+                    {isBookmarked ? 'Remove Bookmark' : 'Add Bookmark'}
+                  </button>
+                ) : (
+                  <div className="alert alert-warning small mb-0">
+                    ⚠ Please log in to bookmark
                   </div>
                 )}
               </div>

@@ -135,6 +135,7 @@ export default function UserProfile({ onViewChange, user }) {
             ratings.slice(0, 10).map(async (rating, index) => {
               try {
                 const movieDetails = await ApiService.getMovie(rating.tconst)
+                const imdbRating = await ApiService.getImdbRating(rating.tconst)
                 
                 return {
                   id: rating.id || index + 1,
@@ -142,8 +143,9 @@ export default function UserProfile({ onViewChange, user }) {
                   title: movieDetails?.primaryTitle || rating.title || 'Unknown Title',
                   type: movieDetails?.titleType || rating.titleType || 'Movie',
                   userRating: rating.rating || rating.value || 0,
-                  overallRating: movieDetails?.averageRating || 'N/A',
-                  year: movieDetails?.startYear
+                  overallRating: imdbRating?.averageRating || movieDetails?.averageRating || 'N/A',
+                  year: movieDetails?.startYear,
+                  ratedAt: rating.ratedAt || new Date().toISOString()
                 }
               } catch (error) {
                 return {
@@ -153,36 +155,6 @@ export default function UserProfile({ onViewChange, user }) {
                   type: rating.titleType || 'Movie',
                   userRating: rating.rating || rating.value || 0,
                   overallRating: 'N/A'
-                }
-              }
-            })
-          )
-        }
-
-        // Transform person ratings data
-        let personRatingsData = []
-        if (personRatingsResponse?.items || personRatingsResponse) {
-          const personRatings = personRatingsResponse.items || personRatingsResponse || []
-          personRatingsData = await Promise.all(
-            personRatings.slice(0, 10).map(async (rating, index) => {
-              try {
-                const personDetails = await ApiService.getPersonDetails(rating.nconst)
-                
-                return {
-                  id: rating.id || index + 1,
-                  nconst: rating.nconst,
-                  name: personDetails?.name || rating.name || 'Unknown Person',
-                  birthYear: personDetails?.birthYear,
-                  deathYear: personDetails?.deathYear,
-                  userRating: rating.rating || rating.value || 0,
-                  ratedAt: rating.ratedAt || new Date().toISOString()
-                }
-              } catch (error) {
-                return {
-                  id: rating.id || index + 1,
-                  nconst: rating.nconst,
-                  name: rating.name || `Person ${index + 1}`,
-                  userRating: rating.rating || rating.value || 0
                 }
               }
             })
@@ -259,7 +231,7 @@ export default function UserProfile({ onViewChange, user }) {
   return (
     <div className="container-fluid mt-4">
       <div className="row">
-        {/* Movie Bookmarks */}
+        {/* User Bookmarks */}
         <div className="col-md-2">
           <div className="border p-3 h-100">
             <h5 className="mb-3">Movie Bookmarks</h5>
@@ -323,7 +295,7 @@ export default function UserProfile({ onViewChange, user }) {
           </div>
         </div>
 
-        {/* Movie Ratings */}
+        {/* User Ratings */}
         <div className="col-md-2">
           <div className="border p-3 h-100">
             <h5 className="mb-3">Movie Ratings</h5>
@@ -379,6 +351,35 @@ export default function UserProfile({ onViewChange, user }) {
                 </ul>
               ) : (
                 <div className="text-muted">No person ratings found</div>
+              )}
+            </div>
+          </div>
+        </div>
+          <div className="border p-3 h-100">
+            <h3 className="mb-3">User Ratings</h3>
+            <div className="border p-2" style={{ height: '250px', overflowY: 'auto' }}>
+              {userRatings.length > 0 ? (
+                <ul className="list-unstyled mb-0">
+                  {userRatings.map((rating) => (
+                    <li 
+                      key={rating.id} 
+                      className="mb-2 p-2 bg-light rounded"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => onViewChange('movie-details', { movieId: rating.tconst })}
+                    >
+                      <div>
+                        <strong>{rating.title}</strong>
+                        {rating.year && <span className="text-muted ms-2">({rating.year})</span>}
+                      </div>
+                      <div className="small">
+                        <span className="text-primary">Your Rating: {rating.userRating}</span>
+                        <span className="text-muted ms-2">Overall: {rating.overallRating}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-muted">No ratings found</div>
               )}
             </div>
           </div>

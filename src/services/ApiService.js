@@ -191,6 +191,23 @@ class ApiService {
     })
   }
 
+  // Person bookmarks
+  async getUserPersonBookmarks(userId, page = 1, pageSize = 20) {
+    return this.makeRequest(`/users/${userId}/person-bookmarks?page=${page}&pageSize=${pageSize}`)
+  }
+
+  async addPersonBookmark(userId, nconst, note = '') {
+    return this.makeRequest(`/users/${userId}/person-bookmarks?nconst=${nconst}&note=${encodeURIComponent(note)}`, {
+      method: 'POST'
+    })
+  }
+
+  async removePersonBookmark(userId, nconst) {
+    return this.makeRequest(`/users/${userId}/person-bookmarks/${nconst}`, {
+      method: 'DELETE'
+    })
+  }
+
   // Get current authenticated user's rating history using JWT token
   async getMyRatingHistory(page = 1, pageSize = 100) {
     try {
@@ -232,6 +249,51 @@ class ApiService {
       return await response.json()
     } catch (error) {
       console.warn('Could not fetch rating history:', error)
+      return { items: [] }
+    }
+  }
+
+  // Get current authenticated user's person rating history using JWT token
+  async getMyPersonRatingHistory(page = 1, pageSize = 100) {
+    try {
+      // Get current token from sessionStorage
+      const token = sessionStorage.getItem('authToken')
+      if (!token) {
+        console.warn('No auth token available')
+        return { items: [] }
+      }
+      
+      // Extract user ID from JWT token
+      const userId = getUserIdFromToken(token)
+      if (!userId) {
+        console.warn('Could not extract user ID from token')
+        return { items: [] }
+      }
+      
+      // Debug: log the full URL and request (using PascalCase for C# API)
+      const url = `${API_BASE_URL}/users/${userId}/history/person-ratings?Page=${page}&PageSize=${pageSize}`
+      console.log('Fetching person rating history from:', url)
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      // Debug: log response status
+      console.log('Person rating history response status:', response.status)
+      
+      if (!response.ok) {
+        const errorData = await response.text()
+        console.error('Person rating history error response:', response.status, errorData)
+        return { items: [] }
+      }
+      
+      return await response.json()
+    } catch (error) {
+      console.warn('Could not fetch person rating history:', error)
       return { items: [] }
     }
   }
